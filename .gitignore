@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+.pytest_cache/
+_site/
+_build/
+book/_build/
+.jupyterlite.doit.db*
+_bmad/
+_bmad-output/
+test-results/
+node_modules/
+.tools/

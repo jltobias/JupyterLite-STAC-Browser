@@ -1,0 +1,6 @@
+# Static build + deterministic verification. Python 3.11–3.13; Node 22+.
+jupyter-book==2.1.7
+jupyterlite-core==0.6.4
+jupyterlite-pyodide-kernel==0.6.1
+nbformat==5.10.4
+playwright==1.63.0

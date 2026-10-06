@@ -1,0 +1,10 @@
+cff-version: 1.2.0
+message: Please cite this software and separately cite the datasets and providers you use.
+title: 'JupyterLite STAC Browser: STAC Field Guide'
+type: software
+authors:
+  - name: JupyterLite-STAC-Browser contributors
+repository-code: https://github.com/jltobias/JupyterLite-STAC-Browser
+url: https://github.com/jltobias/JupyterLite-STAC-Browser
+license: MIT
+abstract: Browser-only STAC metadata discovery, executable JupyterLite tutorials, and a Jupyter Book field guide with WorldPop as the default catalog.

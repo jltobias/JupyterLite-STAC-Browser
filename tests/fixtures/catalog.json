@@ -1,0 +1,11 @@
+{
+  "type": "Catalog",
+  "stac_version": "1.0.0",
+  "id": "synthetic-fixture-only",
+  "title": "Synthetic regression catalog — not real data",
+  "description": "Deterministic fixture used only by automated tests.",
+  "links": [
+    {"rel": "data", "href": "./collections", "type": "application/json"},
+    {"rel": "search", "href": "./search", "method": "GET"}
+  ]
+}

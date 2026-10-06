@@ -1,0 +1,28 @@
+version: 1
+project:
+  title: STAC Field Guide
+  description: Browser-only population and Earth observation discovery with JupyterLite
+  github: https://github.com/jltobias/JupyterLite-STAC-Browser
+  license: MIT
+  toc:
+    - file: index.md
+    - file: setup.md
+    - file: exploration.md
+    - title: Executable tutorials
+      children:
+        - file: 01_launch_map.ipynb
+        - file: 02_worldpop_search.ipynb
+        - file: 03_other_catalogs_and_export.ipynb
+    - file: architecture.md
+    - file: references.md
+site:
+  template: book-theme
+  title: STAC Field Guide
+  options:
+    logo_text: STAC Field Guide
+    hide_authors: true
+  nav:
+    - title: Explorer
+      url: /../explorer
+    - title: Run notebooks
+      url: /../lite/lab/index.html

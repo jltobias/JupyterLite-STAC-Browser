@@ -1,0 +1,18 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "stac_version": "1.0.0",
+      "id": "synthetic-1",
+      "collection": "TEST",
+      "bbox": [29, -2, 35, 5],
+      "geometry": {"type": "Polygon", "coordinates": [[[29, -2], [35, -2], [35, 5], [29, 5], [29, -2]]]},
+      "properties": {"datetime": "2020-01-01T00:00:00Z", "title": "<img src=x onerror=alert(1)> Synthetic item", "description": "<script>window.compromised=true</script>"},
+      "links": [{"rel": "self", "href": "./items/synthetic-1.json"}],
+      "assets": {"data": {"href": "./data.tif", "title": "Fixture raster (never fetched)", "type": "image/tiff"}, "unsafe": {"href": "javascript:alert(1)", "title": "Unsafe link"}}
+    },
+    {"type": "Feature", "stac_version": "1.0.0", "id": "synthetic-2", "collection": "TEST", "geometry": null, "properties": {"datetime": "2020-01-02T00:00:00Z"}, "links": [], "assets": {}}
+  ],
+  "links": [{"rel": "next", "href": "./page2", "method": "POST", "body": {"token": "second"}}]
+}
