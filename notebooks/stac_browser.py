@@ -34,6 +34,53 @@ def validate_bbox(bbox):
     return values
 
 
+def validate_polygon(geometry):
+    """Validate one simple 2D WGS84 ring, with no holes or date-line edges."""
+    import math
+    coordinates = geometry.get("coordinates") if isinstance(geometry, dict) else None
+    if (not isinstance(geometry, dict) or geometry.get("type") != "Polygon"
+            or not isinstance(coordinates, list) or len(coordinates) != 1
+            or not isinstance(coordinates[0], list) or not 4 <= len(coordinates[0]) <= 501):
+        raise ValueError("Use one Polygon with 3–500 vertices and one closed ring; holes and MultiPolygons are not supported.")
+    ring = coordinates[0]
+    if any(not isinstance(p, (list, tuple)) or len(p) != 2
+           or any(isinstance(x, bool) or not isinstance(x, (int, float)) or not math.isfinite(x) for x in p)
+           or not (-180 <= p[0] <= 180 and -90 <= p[1] <= 90) for p in ring):
+        raise ValueError("Polygon coordinates must be longitude/latitude within ±180°/±90°. Split date-line areas into separate searches.")
+    if list(ring[0]) != list(ring[-1]):
+        raise ValueError("Polygon ring must be closed.")
+
+    def cross(a, b, c):
+        return (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])
+
+    def on_segment(a, b, p):
+        return (cross(a, b, p) == 0 and min(a[0], b[0]) <= p[0] <= max(a[0], b[0])
+                and min(a[1], b[1]) <= p[1] <= max(a[1], b[1]))
+
+    def intersects(a, b, c, d):
+        return ((cross(a, b, c) * cross(a, b, d) < 0 and cross(c, d, a) * cross(c, d, b) < 0)
+                or on_segment(a, b, c) or on_segment(a, b, d) or on_segment(c, d, a) or on_segment(c, d, b))
+
+    count, area = len(ring) - 1, 0
+    for i in range(count):
+        a, b, c = ring[i], ring[i + 1], ring[(i + 2) % count]
+        if list(a) == list(b):
+            raise ValueError("Polygon has duplicate neighboring vertices.")
+        if abs(a[0] - b[0]) > 180:
+            raise ValueError("Polygon crosses the antimeridian. Split date-line areas into separate searches.")
+        if cross(a, b, c) == 0 and sum((a[k] - b[k]) * (c[k] - b[k]) for k in (0, 1)) > 0:
+            raise ValueError("Polygon edges overlap. Move or remove the overlapping vertex.")
+        area += (a[0] - ring[0][0]) * (b[1] - ring[0][1]) - (b[0] - ring[0][0]) * (a[1] - ring[0][1])
+        for j in range(i + 2, count):
+            if i == 0 and j == count - 1:
+                continue
+            if intersects(a, b, ring[j], ring[j + 1]):
+                raise ValueError("Polygon edges cross or touch. Move or remove vertices to make a simple area.")
+    if area == 0:
+        raise ValueError("Polygon must enclose a nonzero area.")
+    return {"type": "Polygon", "coordinates": [[list(p) for p in ring]]}
+
+
 def date_range(start=None, end=None):
     for value in (start, end):
         if value and (len(value) != 10 or date.fromisoformat(value).isoformat() != value):
@@ -137,6 +184,7 @@ class STACBrowser:
         self.items = []
         self.requests = []
         self.query = None
+        self.study_area = None
         self.next = None
         self.collection_next = None
         self.retrieved_at = None
@@ -181,28 +229,41 @@ class STACBrowser:
         self.collections, self.collection_next = collections, collection_next
         return self.collections
 
-    async def search(self, bbox, collection=None, start=None, end=None, limit=25):
+    async def search(self, bbox=None, collection=None, start=None, end=None, limit=25, *, intersects=None, study_area=None):
         if not self.search_link:
             raise ValueError("Static catalog: remote Item Search is not advertised. Use browse_links() and open_link().")
         if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 100:
             raise ValueError("limit must be an integer from 1 to 100.")
-        query = {"bbox": validate_bbox(bbox), "limit": limit}
+        if bbox is not None and intersects is not None:
+            raise ValueError("Use either bbox or intersects, never both.")
+        query = {"limit": limit}
+        if bbox is not None:
+            query["bbox"] = validate_bbox(bbox)
+        if intersects is not None:
+            query["intersects"] = validate_polygon(intersects)
+        snapshot = copy.deepcopy(study_area)
         if collection:
             query["collections"] = [collection]
         interval = date_range(start, end)
         if interval:
             query["datetime"] = interval
-        req = {"url": https_url(self.search_link["href"], self.url), "method": self.search_link.get("method", "GET").upper()}
+        # Polygon coordinates can exceed GET URL limits; use an advertised POST link.
+        search_link = (next((link for link in _links(self.root) if link.get("rel") == "search"
+                            and str(link.get("method", "GET")).upper() == "POST"), self.search_link)
+                       if intersects is not None else self.search_link)
+        req = {"url": https_url(search_link["href"], self.url), "method": search_link.get("method", "GET").upper()}
+        parts = urlsplit(req["url"])
+        parameters = [(key, value) for key, value in parse_qsl(parts.query, keep_blank_values=True)
+                      if key not in ("bbox", "intersects", "collections", "datetime", "limit")]
         if req["method"] == "POST":
             req["body"] = query
         else:
-            parts = urlsplit(req["url"])
-            parameters = [(key, value) for key, value in parse_qsl(parts.query, keep_blank_values=True)
-                          if key not in ("bbox", "collections", "datetime", "limit")]
-            parameters.extend((key, ",".join(map(str, value)) if isinstance(value, list) else value) for key, value in query.items())
-            req["url"] = urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(parameters), ""))
+            parameters.extend((key, json.dumps(value, separators=(",", ":")) if key == "intersects"
+                               else ",".join(map(str, value)) if isinstance(value, list) else value) for key, value in query.items())
+        req["url"] = urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(parameters), ""))
         await self._page(req, reset=True)
         self.query = query
+        self.study_area = snapshot
         return self.items
 
     async def _page(self, request, reset=False):
@@ -243,6 +304,7 @@ class STACBrowser:
         if not _valid_item(item) or not item.get("stac_version"):
             raise ValueError("Expected a STAC Item.")
         self.items, self.requests, self.query, self.next = [item], [request], None, None
+        self.study_area = None
         self._item_locations = {_item_key(item): _item_location(item, source)}
         self.retrieved_at = datetime.now(timezone.utc).isoformat()
         return item
@@ -269,8 +331,10 @@ class STACBrowser:
         return {"type": "FeatureCollection", "features": features}
 
     def provenance(self):
-        return {"stac_root": self.url, "query": self.query, "requests": self.requests,
-                "retrieved_at": self.retrieved_at, "count": len(self.items), "max_items": MAX_ITEMS}
+        mode = ("bbox" if "bbox" in self.query else "polygon" if "intersects" in self.query else "none") if self.query is not None else None
+        return copy.deepcopy({"stac_root": self.url, "query": self.query, "spatial_mode": mode,
+                              "study_area": self.study_area, "requests": self.requests,
+                              "retrieved_at": self.retrieved_at, "count": len(self.items), "max_items": MAX_ITEMS})
 
     def save(self, prefix="stac"):
         if not self.items:

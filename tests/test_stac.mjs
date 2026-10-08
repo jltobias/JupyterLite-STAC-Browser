@@ -1,12 +1,94 @@
 // Focused browser-client protocol regressions. Uses Node's native Fetch types.
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import {polygonValue} from '../web/geometry.js';
 import {STACClient, PRESETS, dateRange, viewportBBox, fetchJSON, localToday, earliestCollectionDate, collectionBBox} from '../web/stac.js';
 
 const root = {type: 'Catalog', id: 'synthetic', stac_version: '1.0.0', links: [{rel: 'data', href: './collections'}, {rel: 'search', href: './search'}]};
 const item = (id, extra = {}) => ({type: 'Feature', id, stac_version: '1.0.0', properties: {}, geometry: null, links: [], assets: {}, ...extra});
 const page = (features, links = []) => ({type: 'FeatureCollection', features, links});
 const fetcher = handler => async (url, options) => ({ok: true, url, json: async () => structuredClone(await handler(new URL(url), options))});
+
+test('simple polygon validation matches shared geometry cases', () => {
+  const cases = JSON.parse(readFileSync(new URL('./fixtures/study-geometries.json', import.meta.url)));
+  for (const ring of cases.valid) assert.deepEqual(polygonValue({type: 'Polygon', coordinates: [ring]}).coordinates, [ring]);
+  for (const ring of cases.invalid) assert.throws(() => polygonValue({type: 'Polygon', coordinates: [ring]}));
+  for (const invalid of [null, {}, {type: 'MultiPolygon', coordinates: []}, {type: 'Polygon', coordinates: [cases.valid[0], cases.valid[0]]}, {type: 'Polygon', coordinates: [[[NaN, 1], [0, 0], [1, 0], [NaN, 1]]]}]) assert.throws(() => polygonValue(invalid));
+  for (const count of [500, 501]) {
+    const ring = Array.from({length: count}, (_, i) => [30 + Math.cos(2 * Math.PI * i / count), Math.sin(2 * Math.PI * i / count)]);
+    const polygon = {type: 'Polygon', coordinates: [[...ring, [...ring[0]]]]};
+    if (count === 500) assert.deepEqual(polygonValue(polygon), polygon);
+    else assert.throws(() => polygonValue(polygon), /3–500/);
+  }
+});
+
+test('polygons prefer advertised POST and capture inputs before awaiting the response', async () => {
+  let complete, entered, request;
+  const started = new Promise(resolve => { entered = resolve; });
+  const client = new STACClient(fetcher((url, options) => {
+    if (url.pathname === '/') return {...root, links: [
+      {rel: 'search', href: './get-search', method: 'GET'},
+      {rel: 'search', href: './post-search?token=keep&bbox=stale', method: 'POST'},
+    ]};
+    request = {url, options};
+    if (options.method === 'POST') { entered(); return new Promise(resolve => { complete = resolve; }); }
+    return page([item('get-result')]);
+  }));
+  await client.connect('https://fixture.test/');
+  const polygon = {type: 'Polygon', coordinates: [[[30, -1], [33, -1], [32, 3], [30, -1]]]};
+  const snapshot = {shape: 'polygon', geometry: structuredClone(polygon)};
+  const expected = structuredClone(polygon);
+  const pending = client.search({intersects: polygon, studyArea: snapshot});
+  await started;
+  polygon.coordinates[0][0][0] = 99;
+  snapshot.geometry.coordinates[0][1][0] = 99;
+  complete(page([item('post-result')]));
+  await pending;
+  assert.equal(request.url.pathname, '/post-search');
+  assert.deepEqual(Object.fromEntries(request.url.searchParams), {token: 'keep'});
+  assert.deepEqual(JSON.parse(request.options.body).intersects, expected);
+  assert.deepEqual(client.provenance().query.intersects, expected);
+  assert.deepEqual(client.provenance().study_area.geometry, expected);
+  await client.search({bbox: [30, -1, 33, 3]});
+  assert.equal(request.options.method, 'GET');
+  assert.equal(request.url.pathname, '/get-search');
+});
+
+test('GET and POST use exactly the selected spatial filter; snapshots survive edits and failures', async () => {
+  const polygon = {type: 'Polygon', coordinates: [[[30, -1], [33, -1], [32, 3], [30, -1]]]};
+  for (const method of ['GET', 'POST']) {
+    let failure = false, calls = 0, request;
+    const client = new STACClient(fetcher((url, options) => {
+      calls++;
+      if (url.pathname === '/') return {...root, links: [{rel: 'search', method, href: './search?bbox=old&intersects=old&token=keep'}]};
+      if (failure) throw new Error('provider outage');
+      request = {url, body: options.body ? JSON.parse(options.body) : null};
+      return page([item('one')]);
+    }));
+    await client.connect('https://fixture.test/');
+    for (const [mode, spatial] of [['bbox', {bbox: [-180, -90, 180, 90]}], ['polygon', {intersects: polygon}], ['none', {}]]) {
+      const snapshot = {shape: 'polygon', geometry: structuredClone(polygon), bbox: [30, -1, 33, 3]};
+      await client.search({...spatial, collection: 'TEST', start: '2024-01-01', limit: 2, studyArea: snapshot});
+      const sent = method === 'POST' ? request.body : Object.fromEntries(request.url.searchParams);
+      if (method === 'POST') assert.deepEqual(Object.fromEntries(request.url.searchParams), {token: 'keep'});
+      assert.equal('bbox' in sent, mode === 'bbox');
+      assert.equal('intersects' in sent, mode === 'polygon');
+      if (mode === 'polygon') assert.deepEqual(method === 'POST' ? sent.intersects : JSON.parse(sent.intersects), polygon);
+      assert.ok(sent.collections && sent.datetime && sent.limit);
+      assert.equal(client.provenance().spatial_mode, mode);
+      snapshot.geometry.coordinates[0][0][0] = 10;
+      assert.equal(client.provenance().study_area.geometry.coordinates[0][0][0], 30);
+      const previous = client.provenance(); failure = true;
+      await assert.rejects(client.search({intersects: polygon}));
+      assert.deepEqual(client.provenance(), previous); failure = false;
+    }
+    const before = calls;
+    await assert.rejects(client.search({bbox: [0, 0, 1, 1], intersects: polygon}), /never both/);
+    await assert.rejects(client.search({intersects: {type: 'Polygon', coordinates: []}}));
+    assert.equal(calls, before);
+  }
+});
 
 test('Copernicus requests a bounded collection list and preserves provider pagination', async () => {
   const endpoint = 'https://stac.dataspace.copernicus.eu/v1';

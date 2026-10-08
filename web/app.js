@@ -1,16 +1,24 @@
-import {STACClient, PRESETS, safeURL, viewportBBox, localToday, earliestCollectionDate, collectionBBox} from './stac.js';
+import {STACClient, PRESETS, safeURL, localToday, earliestCollectionDate} from './stac.js';
+import {StudyArea} from './study-area.js';
 const $ = id => document.getElementById(id);
 const client = new STACClient();
-const map = L.map('map', {worldCopyJump: true}).setView([-2, 32], 5);
+L.PM.setOptIn(true);
+const map = L.map('map', {worldCopyJump: true, pmIgnore: false}).setView([-2, 32], 5);
+for (const [name, z] of [['coverage', 390], ['footprints', 410], ['study', 430]]) map.createPane(name).style.zIndex = z;
 L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom: 18, attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a>'}).addTo(map);
 const footprints = L.featureGroup().addTo(map);
 let itemLayers = new WeakMap();
 let busy = false, connected = false;
 let startEdited = false;
+function queryChanged() {
+  if (client.query) $('result-context').textContent = 'Search settings changed. Displayed results and exports still describe the completed search. Select Search to refresh them.';
+}
+const study = new StudyArea(map, {status, changed: queryChanged});
 function el(tag, text, className) { const n = document.createElement(tag); if (text != null) n.textContent = text; if (className) n.className = className; return n; }
 function status(text, error = false) { $('status').textContent = text; $('status').className = error ? 'error' : ''; }
 function controls() {
-  $('start').disabled = $('end').disabled = busy;
+  study.setBusy(busy);
+  $('start').disabled = $('end').disabled = $('limit').disabled = busy;
   $('connect').disabled = busy;
   $('more').disabled = busy || !connected || !client.next;
   $('more-collections').disabled = busy || !connected || !client.collectionNext;
@@ -47,22 +55,13 @@ function dateDefaults(reset = true) {
 $('collection').onchange = () => {
   dateDefaults();
   const collection = client.collections.find(c => c.id === $('collection').value);
-  if (!collection) { status('All collections selected. Current map and search area kept.'); return; }
-  const bbox = collectionBBox(collection);
-  if (!bbox) { status('This collection has no usable spatial extent. Current map and bounding box kept; set an area manually.', true); return; }
-  const [west, south, east, north] = bbox;
-  const crossing = east < west;
-  const flat = west === east || south === north;
-  map.fitBounds([[south, west], [north, crossing ? east + 360 : east]], {padding: [20, 20], maxZoom: 12, animate: false});
-  $('bbox').value = bbox.join(',');
-  if (!client.searchLink) status('Collection extent applied. Browse child or item links above; remote search is unavailable.');
-  else if (crossing) status('Collection extent crosses the antimeridian. Split it into two searches on either side of ±180°.', true);
-  else if (flat) status('Collection extent is a point or line. Enlarge the area and select Use map extent before searching.', true);
-  else status('Collection extent applied. Select Search this area to load items.');
+  study.showCollection(collection, Boolean(client.searchLink)); queryChanged();
 };
-$('start').oninput = () => { startEdited = true; };
+$('start').oninput = () => { startEdited = true; queryChanged(); };
+for (const id of ['end', 'limit', 'bbox']) $(id).addEventListener('input', queryChanged);
 async function connect(url) {
   connected = false; client.reset(); renderResults(); collectionOptions(); dateDefaults(); controls();
+  study.showCollection(null); $('result-context').textContent = '';
   $('metadata').replaceChildren(el('p', 'Select a footprint or an item to inspect its metadata.', 'empty'));
   status('Connecting to catalog…'); $('catalog-links').replaceChildren();
   $('catalog-summary').textContent = 'Connecting…';
@@ -83,21 +82,23 @@ async function connect(url) {
 }
 $('preset').onchange = () => { const preset = PRESETS[$('preset').value]; if (preset) $('endpoint').value = preset[1]; else { $('endpoint').value = ''; $('endpoint').focus(); } };
 $('connect-form').onsubmit = event => { event.preventDefault(); run(() => connect($('endpoint').value)); };
-$('use-map').onclick = () => {
-  const b = map.getBounds();
-  try { $('bbox').value = viewportBBox(b.getWest(), b.getSouth(), b.getEast(), b.getNorth()).map(x => +x.toFixed(5)).join(','); }
+$('search-form').onsubmit = event => {
+  event.preventDefault();
+  if (busy) return;
+  let spatial;
+  try { spatial = study.searchParameters(); }
   catch (error) { status(error.message, true); return; }
-  status('Bounding box updated from the map. Select Search this area to request items.');
-};
-$('search-form').onsubmit = event => { event.preventDefault(); run(async () => {
+  run(async () => {
   status('Searching metadata…');
-  await client.search({bbox: $('bbox').value, collection: $('collection').value, start: $('start').value, end: $('end').value, limit: $('limit').value});
+  await client.search({...spatial, collection: $('collection').value, start: $('start').value, end: $('end').value, limit: $('limit').value});
+  study.setEditing(false);
+  $('result-context').textContent = `Completed search: ${client.provenance().spatial_mode === 'none' ? 'no study-area spatial filter' : client.query.intersects ? 'exact polygon' : 'bounding box'}. Results and exports describe this query.`;
   $('metadata').replaceChildren(el('p', 'Select one of the new results to inspect its metadata.', 'empty'));
   renderResults();
   status(client.items.length ? `${client.items.length} items loaded. Select an item to inspect its assets.${client.next ? ' Another page is available.' : ''}` : 'No items match this area and date range. Try a larger area or remove the date filter.');
 }); };
 $('more').onclick = () => run(async () => { status('Loading next page…'); await client.more(); renderResults(); status(`${client.items.length} unique items loaded (maximum 500).`); });
-$('more-collections').onclick = () => run(async () => { await client.moreCollections(); collectionOptions(); dateDefaults(false); status(`${client.collections.length} collections loaded (maximum 1000).`); });
+$('more-collections').onclick = () => run(async () => { await client.moreCollections(); collectionOptions(); dateDefaults(false); queryChanged(); status(`${client.collections.length} collections loaded (maximum 1000).`); });
 function renderResults() {
   $('results').replaceChildren(); footprints.clearLayers(); $('count').textContent = client.items.length;
   itemLayers = new WeakMap();
@@ -109,7 +110,7 @@ function renderResults() {
     button.onclick = () => select(item, button); $('results').append(button);
     if (item.geometry) {
       try {
-        const layer = L.geoJSON(item, {style: {color: '#386a4e', weight: 1.7, fillColor: '#c0d981', fillOpacity: 0}, pointToLayer: (_, latlng) => L.circleMarker(latlng, {radius: 7, color: '#386a4e', fillOpacity: 0})});
+        const layer = L.geoJSON(item, {pane: 'footprints', pmIgnore: true, style: {color: '#386a4e', weight: 1.7, fillColor: '#c0d981', fillOpacity: 0, className: 'result-footprint'}, pointToLayer: (_, latlng) => L.circleMarker(latlng, {pane: 'footprints', pmIgnore: true, radius: 7, color: '#386a4e', fillOpacity: 0, className: 'result-footprint'})});
         layer.on('click', () => { select(item, button); button.scrollIntoView({block: 'nearest'}); });
         layer.bindTooltip(el('span', item.properties?.title || item.id)); footprints.addLayer(layer);
         itemLayers.set(item, layer);

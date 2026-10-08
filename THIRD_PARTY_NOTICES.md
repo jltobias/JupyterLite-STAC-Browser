@@ -4,6 +4,8 @@ Original project code, notebooks, text and the original `assets/splash.svg` are 
 
 The deployed site bundles **Leaflet 1.9.4** (BSD-2-Clause); see `web/vendor/LICENSE` for the complete license. JupyterLite and jupyterlite-pyodide-kernel use BSD-3-Clause, JupyterLab uses BSD-3-Clause, Pyodide uses MPL-2.0, and Jupyter Book 2/MyST use MIT. Their distributions include notices for constituent packages. Browser-loaded Python and JavaScript dependencies keep their respective licenses. Build and test tools include nbformat (BSD-3-Clause) and Playwright (Apache-2.0).
 
+The site also bundles **Leaflet-Geoman Free 2.20.0** (MIT), from the pinned npm package `@geoman-io/leaflet-geoman-free@2.20.0`. See [its complete license](web/vendor/LICENSE-geoman) and [bundled dependency notices](web/vendor/GEOMAN-DEPENDENCY-LICENSES.txt). This uses public free rectangle drawing, polygon vertex editing, and layer dragging; no Geoman Pro code or features are included.
+
 Optional fonts are **DM Sans** (Colophon Foundry / Google, [source and OFL](https://github.com/googlefonts/dm-fonts)) and **Space Grotesk** (Florian Karsten, [source and OFL](https://github.com/floriankarsten/space-grotesk)), both SIL Open Font License 1.1. Fonts are requested through Google Fonts; system fonts provide a fallback.
 
 Map tiles and underlying map data: © [OpenStreetMap contributors](https://www.openstreetmap.org/copyright), Open Database License. Tile access is governed by the [OpenStreetMap tile usage policy](https://operations.osmfoundation.org/policies/tiles/). Attribution appears on the interactive map. This application does not cache or prefetch tiles for offline use.

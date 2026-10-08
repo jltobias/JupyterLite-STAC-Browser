@@ -21,6 +21,7 @@ These projects inform the workflow; their source code is not copied into this re
 ## Software and artwork
 
 - [Leaflet 1.9.4](https://leafletjs.com/) — BSD-2-Clause; the vendored distribution retains its license.
+- [Leaflet-Geoman Free 2.20.0](https://github.com/geoman-io/leaflet-geoman/tree/v2.20.0) — MIT; public [edit](https://geoman.io/docs/leaflet/modes/edit-mode) and [drag](https://geoman.io/docs/leaflet/modes/drag-mode) APIs power the study-area controls. Its license and bundled dependency notices are in `web/vendor/LICENSE-geoman` and `web/vendor/GEOMAN-DEPENDENCY-LICENSES.txt`.
 - [JupyterLite](https://jupyterlite.readthedocs.io/) and [jupyterlite-pyodide-kernel](https://github.com/jupyterlite/pyodide-kernel) — BSD-3-Clause.
 - [Pyodide](https://pyodide.org/) — MPL-2.0; included Python packages retain their own licenses.
 - [Jupyter Book 2](https://jupyterbook.org/) and [MyST Markdown](https://mystmd.org/) — MIT; site theme dependencies retain their licenses.

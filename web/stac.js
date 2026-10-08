@@ -1,4 +1,5 @@
 /** Browser-native STAC protocol. No proxy, credentials, or raster downloads. */
+import {polygonValue} from './geometry.js';
 export const PRESETS = {
   worldpop: ['WorldPop', 'https://api.stac.worldpop.org'],
   copernicus: ['Copernicus Data Space', 'https://stac.dataspace.copernicus.eu/v1'],
@@ -21,7 +22,7 @@ export function bboxValue(values) {
       bbox[0] < -180 || bbox[2] > 180 || bbox[1] < -90 || bbox[3] > 90 || bbox[0] >= bbox[2] || bbox[1] >= bbox[3]) {
     throw new Error('Bbox must be west, south, east, north within ±180°/±90°, with west < east and south < north. Split antimeridian searches.');
   }
-  return bbox;
+  return [...bbox];
 }
 
 export function collectionBBox(collection) {
@@ -126,7 +127,7 @@ export class STACClient {
   constructor(fetcher = fetch) { this.fetcher = fetcher; this.reset(); }
   reset() {
     this.root = null; this.url = null; this.searchLink = null; this.collections = []; this.collectionNext = null;
-    this.items = []; this.history = []; this.next = null; this.query = null; this.retrievedAt = null;
+    this.items = []; this.history = []; this.next = null; this.query = null; this.retrievedAt = null; this.studyArea = null;
     this.itemLocations = new WeakMap();
   }
   baseFor(item) { return this.itemLocations.get(item)?.base || this.url; }
@@ -169,23 +170,30 @@ export class STACClient {
     const collectionNext = collections.length < 1000 && links(result.data, 'next')[0] ? nextRequest(links(result.data, 'next')[0], {...req, url: result.url}) : null;
     Object.assign(this, {collections, collectionNext});
   }
-  async search({bbox, collection, start, end, limit = 25}) {
+  async search({bbox, intersects, collection, start, end, limit = 25, studyArea = null} = {}) {
     if (!this.searchLink) throw new Error('Static catalog: remote Item Search is not advertised. Browse child and item links instead.');
-    const query = {bbox: bboxValue(bbox), limit: Number(limit)};
+    if (bbox != null && intersects != null) throw new Error('Use either bbox or intersects, never both.');
+    const query = {limit: Number(limit)};
+    if (bbox != null) query.bbox = bboxValue(bbox);
+    if (intersects != null) query.intersects = polygonValue(intersects);
+    const snapshot = structuredClone(studyArea);
     if (!Number.isInteger(query.limit) || query.limit < 1 || query.limit > 100) throw new Error('Page size must be 1–100.');
     if (collection) query.collections = [collection];
     const datetime = dateRange(start, end); if (datetime) query.datetime = datetime;
-    const method = (this.searchLink.method || 'GET').toUpperCase();
-    const url = new URL(safeURL(this.searchLink.href, this.url, true));
+    // Polygon coordinates can exceed GET URL limits; use an advertised POST link.
+    const searchLink = intersects != null ? links(this.root, 'search').find(l => String(l.method).toUpperCase() === 'POST') || this.searchLink : this.searchLink;
+    const method = (searchLink.method || 'GET').toUpperCase();
+    const url = new URL(safeURL(searchLink.href, this.url, true));
     url.hash = '';
+    for (const key of ['bbox', 'intersects', 'collections', 'datetime', 'limit']) url.searchParams.delete(key);
     if (method === 'GET') {
-      for (const key of ['bbox', 'collections', 'datetime', 'limit']) url.searchParams.delete(key);
-      for (const [k, v] of Object.entries(query)) url.searchParams.set(k, Array.isArray(v) ? v.join(',') : v);
+      for (const [k, v] of Object.entries(query)) url.searchParams.set(k, k === 'intersects' ? JSON.stringify(v) : Array.isArray(v) ? v.join(',') : v);
     }
     const req = {url: url.href, method, ...(method === 'POST' ? {body: query} : {})};
     // Commit only after a successful response so failed searches remain retryable.
     await this.page(req, true);
     this.query = query;
+    this.studyArea = snapshot;
     return this.items;
   }
   async page(req, reset = false) {
@@ -210,7 +218,7 @@ export class STACClient {
     const req = {url: safeURL(link.href, this.url, true), method: 'GET'};
     const {data, url} = await this.request(req);
     if (!validItem(data) || !data.stac_version) throw new Error('Link did not return a STAC Item.');
-    this.items = [data]; this.next = null; this.history = [req]; this.query = null;
+    this.items = [data]; this.next = null; this.history = [req]; this.query = null; this.studyArea = null;
     this.rememberBase(data, url);
     this.retrievedAt = new Date().toISOString();
     return data;
@@ -229,5 +237,5 @@ export class STACClient {
       return copy;
     })};
   }
-  provenance() { return {stac_root: this.url, query: this.query, requests: this.history, retrieved_at: this.retrievedAt, count: this.items.length, max_items: MAX_ITEMS}; }
+  provenance() { return structuredClone({stac_root: this.url, query: this.query, spatial_mode: this.query ? (this.query.bbox ? 'bbox' : this.query.intersects ? 'polygon' : 'none') : null, study_area: this.studyArea, requests: this.history, retrieved_at: this.retrievedAt, count: this.items.length, max_items: MAX_ITEMS}); }
 }

@@ -2,11 +2,15 @@
 
 ## One static deployment
 
-The site is built into `_site/`: the root is a navigation page, `explorer/` holds plain JavaScript modules and vendored Leaflet, `lite/` holds JupyterLite and the notebooks, and `book/` holds Jupyter Book 2’s MyST output. GitHub Pages serves only files. No Python web application, private proxy, token, or account is used.
+The site is built into `_site/`: the root is a navigation page, `explorer/` holds plain JavaScript modules and vendored Leaflet and Leaflet-Geoman Free, `lite/` holds JupyterLite and the notebooks, and `book/` holds Jupyter Book 2’s MyST output. GitHub Pages serves only files. No Python web application, private proxy, token, or account is used.
 
 The map client uses browser `fetch`. The Python helper uses `pyodide.http.pyfetch` in Pyodide; outside the browser, a standard-library asynchronous adapter enables deterministic local testing. Both clients follow STAC links and retain source metadata. No GDAL installation or PySTAC Client dependency is required.
 
 Requests are bounded: 20-second network timeouts, 1–100 items per search page, 500 accumulated unique items, 1,000 collections, and at most 100 static navigation links displayed. Pagination is explicit. Dataset assets are links and are never fetched automatically.
+
+`study-area.js` owns one editable layer through the public Geoman Free drawing, layer-dragging, and vertex-editing APIs. Collection coverage and Item footprints occupy separate map panes and are excluded from Geoman. Editing has no search side effects. `geometry.js` and the Python helper validate the same bounded, simple WGS84 polygon shapes; neither repairs topology nor supports holes, MultiPolygons, or date-line edges. A bbox can span the whole world. Search serializes exactly one of `bbox`, `intersects`, or neither; GET encodes `intersects` as JSON and POST sends a geometry object. Exact polygon queries prefer an advertised POST search link; GET-only providers may require fewer vertices if the URL is too long (HTTP 414). There is no silent spatial fallback. Existing unrelated advertised URL parameters remain intact.
+
+Study geometry and spatial mode are captured when a request starts and committed with a successful response. Later UI edits and failed searches keep the previous results, query, requests, and study snapshot together. Notebook 03 replays bbox, exact-polygon, unrestricted, and static-item exports. Geoman 2.20.0 is pinned and served locally under the same deployment subpath, including inside the JupyterLite iframe.
 
 ## Common failures
 
@@ -18,6 +22,8 @@ Requests are bounded: 20-second network timeouts, 1–100 items per search page,
 | No remote search | Browse static catalog child/item links. Do not assume `/search` exists. |
 | No matching items | Broaden bbox/date filters and verify the collection identifier. |
 | Invalid bbox | Check axis order and geographic bounds; split antimeridian searches. |
+| Invalid polygon | Use one simple closed 2D ring with 3–500 vertices, no holes, no crossing/touching edges, and no date-line edges. |
+| Provider rejects exact polygon | Check provider support; choose bbox explicitly if acceptable. The client never falls back silently. |
 | Kernel still starting | Wait for Pyodide to download; inspect network restrictions if it stalls. |
 | Book assets missing under a repository path | Rebuild with the correct `--base-url`; MyST asset paths are set at build time. |
 | Missing basemap | Tile service may be unavailable; metadata search can still succeed. |

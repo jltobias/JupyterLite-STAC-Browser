@@ -9,6 +9,7 @@ from pathlib import Path
 import threading
 from urllib.parse import parse_qs, urlsplit
 from playwright.sync_api import sync_playwright, expect
+from study_area_check import check_study_area
 
 ROOT = Path(__file__).resolve().parents[1]
 CATALOG = json.loads((ROOT / "tests/fixtures/catalog.json").read_text(encoding="utf-8"))
@@ -47,6 +48,7 @@ def main():
             page.clock.set_fixed_time(datetime(2026, 10, 9, 2, tzinfo=timezone.utc))
             errors = []
             page.on("pageerror", lambda error: errors.append(str(error)))
+            page.on("pageerror", lambda error: print('Browser error:', error, flush=True))
             calls = []
             pending_connections = []
 
@@ -170,6 +172,8 @@ def main():
             page.locator("#collection").select_option("OTHER")
             expect(page.locator("#start")).to_have_value("2010-06-15")
             expect(page.locator("#end")).to_have_value("2026-10-08")
+            expect(page.locator("#bbox")).to_have_value("1,2,3,4")
+            page.locator("#collection-area").click()
             expect(page.locator("#bbox")).to_have_value("-123,37,-121,39")
             assert page.evaluate("previewMap.getBounds().contains([[37,-123],[39,-121]]) && previewMap.getCenter().lng < -121")
             selected_view = page.evaluate("[previewMap.getCenter().lat,previewMap.getCenter().lng,previewMap.getZoom()]")
@@ -200,7 +204,7 @@ def main():
             expect(page.locator(".result-card")).to_have_count(2)
             search_call = next(call for call in reversed(calls) if urlsplit(call["url"]).path == "/search")
             assert parse_qs(urlsplit(search_call["url"]).query) == {"bbox": ["29,-2,35,5"], "limit": ["25"], "collections": ["TEST"], "datetime": ["2020-01-01T00:00:00Z/2020-01-02T23:59:59.999999Z"]}
-            coverage = page.locator("#map path.leaflet-interactive")
+            coverage = page.locator("#map path.result-footprint")
             expect(coverage).to_have_count(1)
             expect(coverage.first).to_be_visible()
             assert coverage.first.get_attribute("fill-opacity") == "0"
@@ -239,6 +243,15 @@ def main():
             page.evaluate("""() => {L.Map.prototype.getBounds = () => ({getWest:()=>-220,getSouth:()=>-95,getEast:()=>220,getNorth:()=>95});}""")
             page.locator("#use-map").click()
             expect(page.locator("#bbox")).to_have_value("-180,-90,180,90")
+            global_calls = len(calls)
+            page.locator('#spatial-mode').select_option('polygon')
+            page.locator('#search').click()
+            expect(page.locator('#status')).to_contain_text('antimeridian')
+            assert len(calls) == global_calls
+            page.locator('#spatial-mode').select_option('bbox')
+            page.locator('#search').click()
+            expect(page.locator('#search')).to_be_enabled()
+            assert parse_qs(urlsplit(calls[-1]['url']).query)['bbox'] == ['-180,-90,180,90']
             page.evaluate("() => {L.Map.prototype.getBounds = window.originalGetBounds; delete window.originalGetBounds;}")
             for endpoint, message in [("collection-failure", "HTTP 503"), ("wrong", "not a STAC"), ("nonjson", "non-JSON"), ("fail", "HTTP 503")]:
                 page.locator("#endpoint").fill("https://fixture.test/" + endpoint)
@@ -269,14 +282,14 @@ def main():
             page.locator("#connect").click()
             expect(page.locator("#collection")).to_be_enabled()
             page.locator("#collection").select_option("CROSSING")
-            expect(page.locator("#bbox")).to_have_value("170,-10,-170,10")
+            expect(page.locator("#bbox")).to_have_value("-180,-90,180,90")
             expect(page.locator("#status")).to_contain_text("crosses the antimeridian")
             assert page.evaluate("Math.abs(previewMap.getCenter().lng-180)<0.1 && previewMap.getBounds().contains([[-10,170],[10,190]])")
             page.locator("#endpoint").fill("https://fixture.test/point-collection.json")
             page.locator("#connect").click()
             expect(page.locator("#collection")).to_be_enabled()
             page.locator("#collection").select_option("POINT")
-            expect(page.locator("#bbox")).to_have_value("30,0,30,0")
+            expect(page.locator("#bbox")).to_have_value("-180,-90,180,90")
             expect(page.locator("#status")).to_contain_text("point or line")
             assert page.evaluate("Math.abs(previewMap.getCenter().lng-30)<0.001 && Math.abs(previewMap.getCenter().lat)<0.001 && previewMap.getZoom()===12")
             page.locator("#use-map").click()
@@ -285,10 +298,11 @@ def main():
             page.locator("#connect").click()
             expect(page.locator("#collection")).to_be_enabled()
             page.locator("#collection").select_option("STATIC")
-            expect(page.locator("#bbox")).to_have_value("-123,37,-121,39")
-            expect(page.locator("#search")).to_be_disabled()
             expect(page.locator("#status")).to_contain_text("remote search is unavailable")
             expect(page.locator("#status")).not_to_contain_text("Select Search")
+            page.locator("#collection-area").click()
+            expect(page.locator("#bbox")).to_have_value("-123,37,-121,39")
+            expect(page.locator("#search")).to_be_disabled()
             page.locator("#endpoint").fill("https://fixture.test/delayed")
             page.locator("#connect").click()
             expect(page.locator("#start")).to_be_disabled()
@@ -316,6 +330,7 @@ def main():
               return true;
             }""")
             assert protocol
+            check_study_area(page, calls)
             # Switching from WorldPop to the second preset uses the real provider URL shape.
             assert page.locator("#preset option").evaluate_all("els => els.map(e=>e.value)") == ["worldpop", "copernicus", "earthsearch", "planetary", "custom"]
             page.locator("#preset").select_option("copernicus")
@@ -326,6 +341,7 @@ def main():
             page.locator("#collection").select_option("sentinel-2-l2a")
             expect(page.locator("#start")).to_have_value("2015-06-27")
             expect(page.locator("#end")).to_have_value("2026-10-08")
+            page.locator("#collection-area").click()
             expect(page.locator("#bbox")).to_have_value("-180,-90,180,90")
             page.locator("#more-collections").click()
             expect(page.locator("#more-collections")).to_be_hidden()
@@ -375,6 +391,14 @@ def main():
                 live = page.evaluate("""async () => {const root=await fetch('https://api.stac.worldpop.org').then(r=>r.json());const response=await fetch('https://api.stac.worldpop.org/search?collections=UGA&bbox=29,-2,35,5&limit=1');const items=await response.json();return {root:root.type,status:response.status,count:items.features?.length};}""")
                 assert live == {"root": "Catalog", "status": 200, "count": 1}, live
                 print("Live WorldPop browser CORS smoke:", live)
+                polygon_live = page.evaluate("""async moduleURL => {
+                  const {STACClient,PRESETS}=await import(moduleURL);
+                  const client=new STACClient(); await client.connect(PRESETS.worldpop[1]);
+                  await client.search({collection:'UGA',intersects:{type:'Polygon',coordinates:[[[30,-1],[33,-1],[32,3],[30,-1]]]},limit:1});
+                  return {count:client.items.length,mode:client.provenance().spatial_mode};
+                }""", address + "/explorer/stac.js")
+                assert polygon_live == {'count': 1, 'mode': 'polygon'}, polygon_live
+                print('Live WorldPop polygon search:', polygon_live)
                 page.unroute("https://stac.dataspace.copernicus.eu/**", copernicus_fixture)
                 live = page.evaluate("""async moduleURL => {
                   const {STACClient,PRESETS}=await import(moduleURL);
@@ -384,9 +408,12 @@ def main():
                   const first=client.items[0]?.id;
                   if(!first || !client.next) throw Error('Expected a result and next page');
                   await client.more();
-                  return {collections:client.collections.length,first,count:client.items.length};
+                  const count=client.items.length;
+                  await client.search({collection:'sentinel-2-l2a',intersects:{type:'Polygon',coordinates:[[[2.2,48.7],[2.5,48.7],[2.35,49],[2.2,48.7]]]},start:'2024-06-01',end:'2024-06-15',limit:1});
+                  return {collections:client.collections.length,first,count,polygonCount:client.items.length};
                 }""", address + "/explorer/stac.js")
                 assert live["count"] == 2, live
+                assert live['polygonCount'] == 1, live
                 print("Live Copernicus browser CORS smoke:", live)
             assert not errors, errors
             browser.close()

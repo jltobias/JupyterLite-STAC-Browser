@@ -66,7 +66,19 @@ class ReplayTests(unittest.IsolatedAsyncioTestCase):
         saved = {"stac_root": "https://fixture.test/", "query": {"bbox": [0, 0, 1, 1], "collections": ["TEST"], "limit": 5,
                  "datetime": "2020-01-01T00:00:00Z/2020-01-02T23:59:59.999999Z"}}
         self.assertEqual(await scope["replay_saved"](saved), [{"id": "api-fixture"}])
-        self.assertEqual(instances[-1].query, {"bbox": [0, 0, 1, 1], "collection": "TEST", "limit": 5, "start": "2020-01-01", "end": "2020-01-02"})
+        self.assertEqual(instances[-1].query, {"bbox": [0, 0, 1, 1], "intersects": None, "study_area": None, "collection": "TEST", "limit": 5, "start": "2020-01-01", "end": "2020-01-02"})
+        polygon = {"type": "Polygon", "coordinates": [[[0, 0], [1, 0], [0, 1], [0, 0]]]}
+        del saved['query']['bbox']
+        saved['query']['intersects'] = polygon
+        saved['study_area'] = {'shape': 'polygon', 'geometry': polygon}
+        await scope['replay_saved'](saved)
+        self.assertIsNone(instances[-1].query['bbox'])
+        self.assertEqual(instances[-1].query['intersects'], polygon)
+        self.assertEqual(instances[-1].query['study_area'], saved['study_area'])
+        del saved['query']['intersects']
+        await scope['replay_saved'](saved)
+        self.assertIsNone(instances[-1].query['bbox'])
+        self.assertIsNone(instances[-1].query['intersects'])
 
 
 if __name__ == "__main__":

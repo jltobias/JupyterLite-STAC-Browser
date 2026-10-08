@@ -1,7 +1,7 @@
 """Execute tutorials in real JupyterLite, with fixture or live catalogs.
 
 Requires a built _site, Playwright Chromium (or local Chrome), and public network
-access to the Pyodide CDN. --fixtures runs the introductory notebook against
+access to the Pyodide CDN. --fixtures runs the tutorials and spatial replay against
 synthetic local responses in CI; the default runs all tutorials with live APIs.
 """
 import argparse
@@ -12,7 +12,7 @@ from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from threading import Thread
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit, parse_qs
 
 from playwright.sync_api import sync_playwright, expect
 
@@ -23,7 +23,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--base-path", default="/JupyterLite-STAC-Browser")
     mode = parser.add_mutually_exclusive_group()
-    mode.add_argument("--fixtures", action="store_true", help="Run the intro with synthetic catalog responses")
+    mode.add_argument("--fixtures", action="store_true", help="Run tutorials and spatial replay with synthetic catalog responses")
     mode.add_argument("--copernicus", action="store_true", help="Run notebook 03 with the documented Copernicus substitution against the live API")
     parser.add_argument("--site-url", help="Test an already deployed site instead of the local build")
     args = parser.parse_args()
@@ -48,6 +48,7 @@ def main():
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True, **({"executable_path": str(chrome)} if chrome.exists() else {}))
             context = browser.new_context(viewport={"width": 1440, "height": 1080})
+            searches = []
             if args.fixtures:
                 catalog = json.loads((ROOT / "tests/fixtures/catalog.json").read_text(encoding="utf-8"))
                 items = copy.deepcopy(json.loads((ROOT / "tests/fixtures/items.json").read_text(encoding="utf-8")))
@@ -57,12 +58,17 @@ def main():
 
                 def fixture(route):
                     path = urlsplit(route.request.url).path
+                    if path.startswith('/v1'):
+                        path = path[3:]
                     if path in ("", "/"):
                         data = catalog
                     elif path == "/collections":
                         data = {"collections": [{"id": "UGA", "title": "Synthetic Uganda fixture"}], "links": []}
                     elif path == "/search":
                         data = items
+                        query = parse_qs(urlsplit(route.request.url).query)
+                        searches.append(query)
+                        assert not ('bbox' in query and 'intersects' in query)
                     else:
                         route.fulfill(status=404, body="{}", content_type="application/json")
                         return
@@ -70,6 +76,7 @@ def main():
                                   headers={"Access-Control-Allow-Origin": "*"})
 
                 context.route("https://api.stac.worldpop.org/**", fixture)
+                context.route("https://earth-search.aws.element84.com/**", fixture)
                 context.route("https://tile.openstreetmap.org/**", lambda route: route.abort())
                 context.route("https://fonts.googleapis.com/**", lambda route: route.abort())
             page = context.new_page()
@@ -79,17 +86,44 @@ def main():
                 ("02_worldpop_search.ipynb", "Saved worldpop-items.geojson"),
                 ("03_other_catalogs_and_export.ipynb", "Reproducible query:"),
             ]
-            if args.fixtures:
-                notebooks = notebooks[:1]
-            elif args.copernicus:
+            if args.copernicus:
                 notebooks = notebooks[2:]
             for notebook, expected in notebooks:
+                searches.clear()
                 print(f"Opening {notebook}", flush=True)
                 page.goto(f"{base}/lite/lab/index.html?path={notebook}", wait_until="domcontentloaded")
                 page.locator(".jp-NotebookPanel:visible .jp-Notebook").wait_for()
+                document = json.loads((ROOT / '_site/lite/files' / notebook).read_text(encoding='utf-8'))
+                heading = ''.join(document['cells'][0]['source']).splitlines()[0].removeprefix('# ')
+                expect(page.locator('.jp-NotebookPanel:visible .jp-Notebook')).to_contain_text(heading)
+                if args.fixtures and notebook.startswith('03'):
+                    editor = page.locator('.jp-NotebookPanel:visible .jp-CodeCell .cm-content').last
+                    # Offscreen CodeMirror cells may not have rendered their source yet.
+                    # Start from the exact built notebook, not the virtualized DOM text.
+                    source = next(''.join(cell['source']) for cell in document['cells']
+                                  if cell['cell_type'] == 'code' and 'async def replay_saved' in ''.join(cell['source'])) + '''
+
+from copy import deepcopy
+for mode in ['bbox', 'polygon', 'none']:
+    sample = deepcopy(saved)
+    sample['query'].pop('bbox', None)
+    sample['query'].pop('intersects', None)
+    if mode == 'bbox':
+        sample['query']['bbox'] = [30, -1, 33, 3]
+    elif mode == 'polygon':
+        sample['query']['intersects'] = {'type': 'Polygon', 'coordinates': [[[30, -1], [33, -1], [32, 3], [30, -1]]]}
+    replay_items = await replay_saved(sample)
+    assert replay_items, mode
+print('Spatial replay passed: bbox, polygon, none')
+'''
+                    editor.click()
+                    page.keyboard.press('ControlOrMeta+a')
+                    page.keyboard.insert_text(source)
+                    page.keyboard.press('Escape')
+                    expected = 'Spatial replay passed: bbox, polygon, none'
                 if args.copernicus:
                     editor = page.locator(".jp-NotebookPanel:visible .jp-CodeCell .cm-content").first
-                    source = editor.inner_text().replace("PRESETS['earthsearch']", "PRESETS['copernicus']")
+                    source = next(''.join(cell['source']) for cell in document['cells'] if cell['cell_type'] == 'code').replace("PRESETS['earthsearch']", "PRESETS['copernicus']")
                     assert "PRESETS['copernicus']" in source, source
                     editor.click()
                     page.keyboard.press("ControlOrMeta+a")
@@ -103,12 +137,25 @@ def main():
                     errors = page.locator(".jp-NotebookPanel:visible .jp-OutputArea-error").all_text_contents()
                     assert not errors, f"{notebook}: {errors}"
                     outputs = page.locator(".jp-NotebookPanel:visible .jp-OutputArea-output").all_text_contents()
+                    assert not any('Traceback (most recent call last)' in output for output in outputs), (notebook, outputs)
                     if any(expected in output for output in outputs):
                         break
                     if time.monotonic() > deadline:
                         page.screenshot(path=str(results / "lite-failure.png"))
                         raise AssertionError(f"Timed out executing {notebook}: {outputs}")
                     page.wait_for_timeout(1000)
+                if args.fixtures and notebook.startswith('03'):
+                    assert len(searches) == 4, searches
+                    for query, mode in zip(searches[1:], ['bbox', 'polygon', 'none']):
+                        assert ('bbox' in query) == (mode == 'bbox'), query
+                        assert ('intersects' in query) == (mode == 'polygon'), query
+                        assert query['collections'] == ['sentinel-2-l2a'], query
+                        assert query['limit'] == ['3'], query
+                        assert query['datetime'][0].startswith('2024-06-01T00:00:00Z/2024-06-15'), query
+                        if mode == 'bbox':
+                            assert [float(x) for x in query['bbox'][0].split(',')] == [30, -1, 33, 3]
+                        elif mode == 'polygon':
+                            assert json.loads(query['intersects'][0]) == {'type': 'Polygon', 'coordinates': [[[30, -1], [33, -1], [32, 3], [30, -1]]]}
                 if args.copernicus:
                     assert any("Source root: https://stac.dataspace.copernicus.eu/v1" in output for output in outputs), outputs
                     assert any("Saved earthsearch-items.geojson" in output for output in outputs), outputs
@@ -124,8 +171,19 @@ def main():
                         page.screenshot(path=str(results / "lite-failure.png"))
                         raise
                     frame.locator("#collection").select_option("UGA")
+                    expect(frame.locator('#map .study-area')).to_have_count(1)
+                    frame.locator('#polygon-area').click()
+                    expect(frame.locator('#map .marker-icon-middle')).to_have_count(4)
+                    frame.locator('#zoom-area').click()
+                    frame.locator('#map .marker-icon-middle').first.click()
+                    print('Iframe edit status:', frame.locator('#status').inner_text(), flush=True)
+                    expect(frame.locator('#map .marker-icon-middle')).to_have_count(5)
+                    frame.locator('#spatial-mode').select_option('polygon')
                     frame.locator("#search").click()
                     frame.locator(".result-card").first.wait_for()
+                    frame.locator('#spatial-mode').select_option('none')
+                    frame.locator('#search').click()
+                    expect(frame.locator('#search')).to_be_enabled()
                     print("Embedded map displayed " + ("synthetic fixture results" if args.fixtures else "live WorldPop results"), flush=True)
                 page.screenshot(path=str(results / (notebook.replace(".ipynb", "") + ".png")))
                 print(f"PASS {notebook}: {expected}", flush=True)

@@ -2,6 +2,7 @@
 import asyncio
 import copy
 import json
+import math
 from pathlib import Path
 import sys
 import unittest
@@ -10,7 +11,7 @@ from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "notebooks"))
-from stac_browser import STACBrowser, PRESETS, date_range, https_url, next_request, validate_bbox, explorer_url
+from stac_browser import STACBrowser, PRESETS, date_range, https_url, next_request, validate_bbox, validate_polygon, explorer_url
 
 CATALOG = json.loads((ROOT / "tests/fixtures/catalog.json").read_text(encoding="utf-8"))
 ITEMS = json.loads((ROOT / "tests/fixtures/items.json").read_text(encoding="utf-8"))
@@ -44,6 +45,25 @@ class Fixture:
 
 
 class ValidationTests(unittest.TestCase):
+    def test_polygon_cases(self):
+        cases = json.loads((ROOT / 'tests/fixtures/study-geometries.json').read_text())
+        for ring in cases['valid']:
+            self.assertEqual(validate_polygon({'type': 'Polygon', 'coordinates': [ring]})['coordinates'], [ring])
+        for ring in cases['invalid']:
+            with self.assertRaises(ValueError):
+                validate_polygon({'type': 'Polygon', 'coordinates': [ring]})
+        for value in [None, {}, {'type': 'MultiPolygon', 'coordinates': []}, {'type': 'Polygon', 'coordinates': cases['valid']}, {'type': 'Polygon', 'coordinates': [[[False, 0], [1, 0], [0, 1], [False, 0]]]}]:
+            with self.assertRaises(ValueError):
+                validate_polygon(value)
+        for count in [500, 501]:
+            ring = [[30 + math.cos(2 * math.pi * i / count), math.sin(2 * math.pi * i / count)] for i in range(count)]
+            polygon = {'type': 'Polygon', 'coordinates': [ring + [ring[0][:]]]}
+            if count == 500:
+                self.assertEqual(validate_polygon(polygon), polygon)
+            else:
+                with self.assertRaisesRegex(ValueError, '3–500'):
+                    validate_polygon(polygon)
+
     def test_https_urls(self):
         self.assertEqual(https_url("../items", "https://example.test/catalog/root.json"), "https://example.test/items")
         for url in ["http://example.test", "javascript:alert(1)", "https://name:pass@example.test", "file:///tmp/a"]:
@@ -78,6 +98,42 @@ class ValidationTests(unittest.TestCase):
 
 
 class ClientTests(unittest.IsolatedAsyncioTestCase):
+    async def test_polygon_post_and_capture_before_response(self):
+        started, release = asyncio.Event(), asyncio.Event()
+        calls = []
+
+        async def fetch(req):
+            calls.append(copy.deepcopy(req))
+            if urlsplit(req['url']).path == '/':
+                return {**CATALOG, 'links': [
+                    {'rel': 'search', 'href': './get-search', 'method': 'GET'},
+                    {'rel': 'search', 'href': './post-search?token=keep&bbox=stale', 'method': 'POST'},
+                ]}, req['url']
+            if req['method'] == 'POST':
+                started.set()
+                await release.wait()
+            return copy.deepcopy(ITEMS), req['url']
+
+        client = await STACBrowser('https://fixture.test/', fetch).connect()
+        polygon = {'type': 'Polygon', 'coordinates': [[[30, -1], [33, -1], [32, 3], [30, -1]]]}
+        expected = copy.deepcopy(polygon)
+        snapshot = {'shape': 'polygon', 'geometry': copy.deepcopy(polygon)}
+        pending = asyncio.create_task(client.search(intersects=polygon, study_area=snapshot))
+        await asyncio.wait_for(started.wait(), 2)
+        polygon['coordinates'][0][0][0] = 99
+        snapshot['geometry']['coordinates'][0][1][0] = 99
+        release.set()
+        await pending
+        req = calls[-1]
+        self.assertEqual(urlsplit(req['url']).path, '/post-search')
+        self.assertEqual(parse_qs(urlsplit(req['url']).query), {'token': ['keep']})
+        self.assertEqual(req['body']['intersects'], expected)
+        self.assertEqual(client.provenance()['query']['intersects'], expected)
+        self.assertEqual(client.provenance()['study_area']['geometry'], expected)
+        await client.search(bbox=[30, -1, 33, 3])
+        self.assertEqual(calls[-1]['method'], 'GET')
+        self.assertEqual(urlsplit(calls[-1]['url']).path, '/get-search')
+
     async def test_copernicus_collection_page_size_preserves_advertised_pagination(self):
         endpoint = "https://stac.dataspace.copernicus.eu/v1"
         self.assertEqual(PRESETS["copernicus"], endpoint)
@@ -250,13 +306,48 @@ class ClientTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_cap(self):
         async def many(req):
-            if req["url"].endswith("search?bbox=0%2C0%2C1%2C1&limit=100"):
+            if urlsplit(req["url"]).path == "/search":
                 return {"type": "FeatureCollection", "features": [{"type": "Feature", "id": str(n)} for n in range(700)], "links": [{"rel": "next", "href": "./next"}]}, req["url"]
             return {**CATALOG, "links": [CATALOG["links"][1]]}, req["url"]
         client = await STACBrowser("https://fixture.test/", many).connect()
         await client.search([0, 0, 1, 1], limit=100)
         self.assertEqual(len(client.items), 500)
         self.assertIsNone(client.next)
+
+    async def test_optional_spatial_filters_and_completed_snapshots(self):
+        polygon = {'type': 'Polygon', 'coordinates': [[[30, -1], [33, -1], [32, 3], [30, -1]]]}
+        for method in ('GET', 'POST'):
+            root = {**CATALOG, 'links': [{'rel': 'search', 'href': './search?bbox=old&intersects=old&token=keep', 'method': method}]}
+            fake = Fixture(root)
+            client = await STACBrowser('https://fixture.test/', fake).connect()
+            for mode, spatial in [('bbox', {'bbox': [-180, -90, 180, 90]}), ('polygon', {'intersects': polygon}), ('none', {})]:
+                snapshot = {'shape': 'polygon', 'geometry': copy.deepcopy(polygon), 'bbox': [30, -1, 33, 3]}
+                await client.search(**spatial, collection='TEST', start='2024-01-01', limit=2, study_area=snapshot)
+                req = fake.calls[-1]
+                if method == 'POST':
+                    self.assertNotIn('bbox', parse_qs(urlsplit(req['url']).query))
+                    self.assertNotIn('intersects', parse_qs(urlsplit(req['url']).query))
+                sent = req['body'] if method == 'POST' else {k: v[-1] for k, v in parse_qs(urlsplit(req['url']).query).items()}
+                self.assertEqual('bbox' in sent, mode == 'bbox')
+                self.assertEqual('intersects' in sent, mode == 'polygon')
+                if mode == 'polygon':
+                    self.assertEqual(sent['intersects'] if method == 'POST' else json.loads(sent['intersects']), polygon)
+                self.assertEqual(client.provenance()['spatial_mode'], mode)
+                self.assertTrue(sent['collections'] and sent['datetime'] and sent['limit'])
+                snapshot['geometry']['coordinates'][0][0][0] = 10
+                self.assertEqual(client.provenance()['study_area']['geometry']['coordinates'][0][0][0], 30)
+                previous = client.provenance()
+                client.search_link['href'] = './failure'
+                with self.assertRaises(RuntimeError):
+                    await client.search(intersects=polygon)
+                self.assertEqual(client.provenance(), previous)
+                client.search_link['href'] = './search'
+            count = len(fake.calls)
+            with self.assertRaises(ValueError):
+                await client.search(bbox=[0, 0, 1, 1], intersects=polygon)
+            with self.assertRaises(ValueError):
+                await client.search(intersects={'type': 'Polygon', 'coordinates': []})
+            self.assertEqual(len(fake.calls), count)
 
 
 if __name__ == "__main__":
