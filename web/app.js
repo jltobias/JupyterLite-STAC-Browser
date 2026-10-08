@@ -27,7 +27,12 @@ async function run(action) {
 function collectionOptions() {
   const selected = $('collection').value;
   $('collection').replaceChildren(new Option('All collections', ''));
-  for (const c of client.collections) $('collection').add(new Option(`${c.id} — ${c.title || c.id}`, c.id));
+  const options = client.collections.map(c => {
+    const title = typeof c.title === 'string' && c.title.trim() ? c.title.trim() : c.id;
+    return new Option(title === c.id ? c.id : `${title} — ${c.id}`, c.id);
+  });
+  options.sort((a, b) => a.text.localeCompare(b.text, undefined, {sensitivity: 'base', numeric: true}));
+  for (const option of options) $('collection').add(option);
   $('collection').value = client.collections.some(c => c.id === selected) ? selected : '';
   $('more-collections').hidden = !client.collectionNext || client.collections.length >= 1000;
 }
