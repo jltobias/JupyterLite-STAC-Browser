@@ -22,7 +22,9 @@ ROOT = Path(__file__).resolve().parents[1]
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--base-path", default="/JupyterLite-STAC-Browser")
-    parser.add_argument("--fixtures", action="store_true", help="Run the intro with synthetic catalog responses")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--fixtures", action="store_true", help="Run the intro with synthetic catalog responses")
+    mode.add_argument("--copernicus", action="store_true", help="Run notebook 03 with the documented Copernicus substitution against the live API")
     parser.add_argument("--site-url", help="Test an already deployed site instead of the local build")
     args = parser.parse_args()
     prefix = args.base_path.rstrip("/")
@@ -79,10 +81,20 @@ def main():
             ]
             if args.fixtures:
                 notebooks = notebooks[:1]
+            elif args.copernicus:
+                notebooks = notebooks[2:]
             for notebook, expected in notebooks:
                 print(f"Opening {notebook}", flush=True)
                 page.goto(f"{base}/lite/lab/index.html?path={notebook}", wait_until="domcontentloaded")
                 page.locator(".jp-NotebookPanel:visible .jp-Notebook").wait_for()
+                if args.copernicus:
+                    editor = page.locator(".jp-NotebookPanel:visible .jp-CodeCell .cm-content").first
+                    source = editor.inner_text().replace("PRESETS['earthsearch']", "PRESETS['copernicus']")
+                    assert "PRESETS['copernicus']" in source, source
+                    editor.click()
+                    page.keyboard.press("ControlOrMeta+a")
+                    page.keyboard.insert_text(source)
+                    page.keyboard.press("Escape")
                 print("Notebook editor loaded; executing cells", flush=True)
                 page.get_by_text("Run", exact=True).first.click()
                 page.get_by_text("Run All Cells", exact=True).click()
@@ -97,6 +109,10 @@ def main():
                         page.screenshot(path=str(results / "lite-failure.png"))
                         raise AssertionError(f"Timed out executing {notebook}: {outputs}")
                     page.wait_for_timeout(1000)
+                if args.copernicus:
+                    assert any("Source root: https://stac.dataspace.copernicus.eu/v1" in output for output in outputs), outputs
+                    assert any("Saved earthsearch-items.geojson" in output for output in outputs), outputs
+                    print("Copernicus metadata search and exports passed in Pyodide", flush=True)
                 if notebook.startswith("01"):
                     print("Frame URLs:", [f.url for f in page.frames], flush=True)
                     frame = page.frame_locator('iframe[src$="/explorer/"]')

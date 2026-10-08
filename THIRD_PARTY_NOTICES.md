@@ -8,7 +8,7 @@ Optional fonts are **DM Sans** (Colophon Foundry / Google, [source and OFL](http
 
 Map tiles and underlying map data: © [OpenStreetMap contributors](https://www.openstreetmap.org/copyright), Open Database License. Tile access is governed by the [OpenStreetMap tile usage policy](https://operations.osmfoundation.org/policies/tiles/). Attribution appears on the interactive map. This application does not cache or prefetch tiles for offline use.
 
-**WorldPop**, **Earth Search / Element 84**, and **Microsoft Planetary Computer** provide external metadata and dataset links. Dataset licensing varies by collection and asset. Preserve the supplied license, provider information, source links and citation requirements. The software MIT license grants no additional dataset rights. Full Item metadata is retained in exported GeoJSON.
+**WorldPop**, [**Copernicus Data Space Ecosystem**](https://dataspace.copernicus.eu/) ([STAC browser](https://browser.stac.dataspace.copernicus.eu/), [API documentation](https://documentation.dataspace.copernicus.eu/APIs/STAC.html)), **Earth Search / Element 84**, and **Microsoft Planetary Computer** provide external metadata and dataset links. Dataset licensing varies by collection and asset. Preserve the supplied license, provider information, source links and citation requirements. The software MIT license grants no additional dataset rights. Full Item metadata is retained in exported GeoJSON.
 
 Workflow references supplied for this project:
 

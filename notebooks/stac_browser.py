@@ -10,6 +10,7 @@ from urllib.parse import parse_qsl, urljoin, urlsplit, urlunsplit, urlencode
 
 PRESETS = {
     "worldpop": "https://api.stac.worldpop.org",
+    "copernicus": "https://stac.dataspace.copernicus.eu/v1",
     "earthsearch": "https://earth-search.aws.element84.com/v1",
     "planetary": "https://planetarycomputer.microsoft.com/api/stac/v1",
 }
@@ -154,6 +155,9 @@ class STACBrowser:
         data = _link(document, "data")
         if data:
             req = {"url": https_url(data["href"], root_url), "method": "GET"}
+            # CDSE defaults to 10 collections per page; request our bounded list in one page.
+            if req["url"] == PRESETS["copernicus"] + "/collections":
+                req["url"] += "?limit=1000"
             page, response_url = await self.fetcher(req)
             if not isinstance(page, dict) or not isinstance(page.get("collections"), list):
                 raise ValueError("Advertised collections URL did not return a collections array.")

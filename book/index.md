@@ -4,7 +4,7 @@ Explore open geospatial catalogs through a map, inspect the metadata behind a fo
 
 This field guide joins three views of one workflow: the **Explorer** makes discovery spatial, **JupyterLite** makes queries executable, and these pages explain the choices. Use the navigation above to open either tool. Start with [setup](./setup.md), then follow the [exploration workflow](./exploration.md).
 
-WorldPop is the default source. Its country collections provide entry points to population datasets. Earth Search and Planetary Computer are available for broader Earth observation discovery, and compatible custom HTTPS STAC catalogs can be connected.
+WorldPop is the default source. Its country collections provide entry points to population datasets. Copernicus Data Space is the second catalog option, followed by Earth Search and Planetary Computer for broader Earth observation discovery. Compatible custom HTTPS STAC catalogs can also be connected.
 
 ```{important}
 Map polygons represent **metadata coverage**, not a population raster or population density. No population rasters are downloaded automatically. Catalog metadata, dataset licenses, and provider attribution remain attached to the results.

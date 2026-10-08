@@ -5,6 +5,7 @@
 - [WorldPop](https://www.worldpop.org/) provides the default population catalog; see the [Global2 announcement](https://www.worldpop.org/blog/worldpop-global2-global-high-resolution-population-estimates-for-2015-2030/) and [STAC API root](https://api.stac.worldpop.org). Consult each collection’s license, providers, and citations. This project does not relicense population data.
 - [STAC specification](https://github.com/radiantearth/stac-spec) defines Catalogs, Collections and Items; [STAC API specification](https://github.com/radiantearth/stac-api-spec) defines discovery and Item Search.
 - [Earth Search](https://earth-search.aws.element84.com/v1) is operated by [Element 84](https://element84.com/earth-search/).
+- [Copernicus Data Space Ecosystem](https://dataspace.copernicus.eu/) provides the second catalog preset: [STAC API root](https://stac.dataspace.copernicus.eu/v1), [official API documentation](https://documentation.dataspace.copernicus.eu/APIs/STAC.html), and the user-supplied [STAC browser](https://browser.stac.dataspace.copernicus.eu/). Consult each collection and asset's license, providers, citations, and access requirements.
 - [Microsoft Planetary Computer](https://planetarycomputer.microsoft.com/docs/overview/about/) provides public metadata and documents asset access.
 - Basemap © [OpenStreetMap contributors](https://www.openstreetmap.org/copyright), ODbL. Respect the [tile usage policy](https://operations.osmfoundation.org/policies/tiles/); this app performs no offline tile prefetch.
 

@@ -4,7 +4,9 @@
 
 WorldPop connects to `https://api.stac.worldpop.org`. Select a collection by its country ISO3 identifier, such as `UGA` or `KEN`. Collection lists load once per connection; providers may return more collections than a requested page limit. The explorer caps its collection list at 1,000 and offers another page only when advertised.
 
-Choose Earth Search or Planetary Computer, then **Connect to catalog**, to switch providers. For a custom source, enter an HTTPS STAC Catalog or Collection URL. The client follows advertised `data` and `search` links; it does not guess search endpoints.
+Choose **Copernicus Data Space** (the second option), Earth Search, or Planetary Computer, then **Connect to catalog**, to switch providers. For a custom source, enter an HTTPS STAC Catalog or Collection URL. The client follows advertised `data` and `search` links; it does not guess search endpoints.
+
+Copernicus connects to `https://stac.dataspace.copernicus.eu/v1`, the API behind the [Copernicus STAC browser](https://browser.stac.dataspace.copernicus.eu/). Its collection request asks for up to 1,000 entries so Sentinel collections can be found without stepping through many small pages. Collections appear alphabetically by title (or ID when no title is supplied); use **Load more collections** if another page is offered within the cap. For a first query, choose **Sentinel-2 Level-2A** (`sentinel-2-l2a`), enter `2.2,48.7,2.5,49` as the bounding box around Paris, and use June 1–15, 2024. Set **Per page** to 10, then search. Global collection extents can be large, so refine the area and dates after selecting one. See the [official STAC documentation](https://documentation.dataspace.copernicus.eu/APIs/STAC.html) for provider details.
 
 Static catalogs can be explored through `child` and `item` links. The explorer explains when no remote Item Search is available. It does not recursively fetch an entire static catalog.
 
@@ -25,6 +27,8 @@ An empty result is a valid answer. Remove date filters, try another collection, 
 ## Inspect before using data
 
 Select an item card or footprint to see identifiers, dates, providers, license, assets, source links, and original JSON. Asset links are direct provider links and may initiate a large download. Public metadata does not guarantee public assets; Planetary Computer asset URLs may need provider signing outside this tool. Dataset terms remain authoritative.
+
+Copernicus metadata discovery works anonymously. Its Sentinel-2 downloads declare provider authentication requirements; consult the [Copernicus STAC documentation](https://documentation.dataspace.copernicus.eu/APIs/STAC.html) for access instructions. The explorer shows a supplied HTTPS alternative when the primary asset uses S3, and labels authentication requirements advertised in the asset metadata. S3-only assets remain available in the original JSON and GeoJSON export for compatible clients. This app does not sign in or attach access tokens to download links.
 
 ## Export and reproduce
 

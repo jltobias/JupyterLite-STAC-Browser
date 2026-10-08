@@ -138,7 +138,21 @@ function select(item, button) {
   const assets = el('ul');
   for (const [key, asset] of Object.entries(item.assets || {})) {
     if (!asset || typeof asset !== 'object' || typeof asset.href !== 'string') continue;
-    const li = el('li'); addLink(li, asset.title || key, asset.href, client.baseFor(item)); li.append(el('small', ` · ${asset.type || 'type unspecified'}`)); assets.append(li);
+    const li = el('li'), base = client.baseFor(item);
+    let href = asset.href, label = asset.title || key, access = asset;
+    try { safeURL(href, base); }
+    catch {
+      const alternative = asset.alternate?.https;
+      if (typeof alternative?.href === 'string') {
+        try { href = safeURL(alternative.href, base, true); label += ' (HTTPS)'; access = alternative; }
+        catch { /* Keep unsupported or unsafe URLs non-clickable. */ }
+      }
+    }
+    if (/^s3:/i.test(href)) li.append(el('span', `${label} (S3; use a compatible client)`));
+    else addLink(li, label, href, base);
+    li.append(el('small', ` · ${asset.type || 'type unspecified'}`));
+    if (Array.isArray(access['auth:refs']) && access['auth:refs'].length) li.append(el('small', ' · Provider authentication required'));
+    assets.append(li);
   }
   panel.append(assets);
   if (!assets.children.length) panel.append(el('p', 'No assets supplied.'));

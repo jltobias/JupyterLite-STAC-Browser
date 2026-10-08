@@ -18,7 +18,9 @@ The [Pages workflow](https://github.com/jltobias/JupyterLite-STAC-Browser/action
 
 The map shows **metadata coverage, not population raster values**. Raster assets are never downloaded automatically. WorldPop `datetime` can describe a release date; inspect `properties.year` and `properties.project` for the population reference year/product.
 
-Earth Search and Planetary Computer presets are included. Custom HTTPS STAC Catalog or Collection URLs are supported. APIs use their advertised search/collection links; static catalogs remain navigable through child/item links without claiming remote search.
+**Copernicus Data Space** is the second catalog option after WorldPop. Select it and click **Connect to catalog** to discover Sentinel and other Earth observation collections through `https://stac.dataspace.copernicus.eu/v1`. The collection list is alphabetical; selecting a collection sets the map extent, bounding box, and date defaults. Narrow the area and dates before searching a global collection. Copernicus collection discovery requests up to 1,000 entries; use **Load more collections** if the provider advertises another page within that cap.
+
+Earth Search and Planetary Computer presets are also included. Custom HTTPS STAC Catalog or Collection URLs are supported. APIs use their advertised search/collection links; static catalogs remain navigable through child/item links without claiming remote search.
 
 ## Reproducible local build
 
@@ -55,6 +57,8 @@ Pinned primary dependencies are in `requirements.txt`. Jupyter Book 2 generates 
 
 For all three notebooks with live WorldPop and Earth Search requests, run `python tests/lite_check.py --base-path /JupyterLite-STAC-Browser`. Use `--base-path ""` for a root build. Add `--site-url https://jltobias.github.io/JupyterLite-STAC-Browser` to check the published site. Live tests use normal browser CORS/TLS enforcement; provider availability remains external.
 
+Run `python tests/lite_check.py --copernicus --base-path /JupyterLite-STAC-Browser` to execute the third notebook with its documented Copernicus substitution, including a bounded Sentinel-2 search and exports. Add `--live` to `tests/browser_check.py` for live WorldPop and Copernicus discovery/search/pagination checks alongside its synthetic UI tests.
+
 GitHub Actions builds and tests pull requests. On `main`, it uploads the combined static artifact and deploys with Pages Actions. Configure the repository's Pages source as **GitHub Actions**. No secrets are required. Publishing is separate from local generation.
 
 ## Limits and architecture
@@ -63,14 +67,14 @@ GitHub Actions builds and tests pull requests. On `main`, it uploads the combine
 - GET/POST pagination follows advertised next links and preserves POST body merging. Duplicate collection/item IDs are collapsed. Exports include only the pages you loaded.
 - Dates and WGS84 bbox order are validated; antimeridian queries must be split.
 - Catalogs must permit browser CORS and have valid HTTPS. There is no TLS or CORS bypass, proxy, authentication flow or fabricated fallback data.
-- Metadata is rendered as text; links are restricted to HTTP(S). Provider asset restrictions still apply, including Planetary Computer signing where required.
+- Metadata is rendered as text; links are restricted to HTTP(S). Supplied HTTPS alternatives are shown for S3 assets when available; original asset metadata is retained. Provider asset restrictions still apply, including Copernicus authentication and Planetary Computer signing where required.
 - Initial Pyodide startup, APIs, OpenStreetMap tiles and optional fonts use the internet. Notebook changes live in browser storage; download files you need to retain.
 
 See [architecture and troubleshooting](book/architecture.md) and [the exploration guide](book/exploration.md). The async Python helper uses `pyodide.http.pyfetch` in-browser and a standard-library adapter outside it. The notebook map is an iframe of the deployed explorer, preserving its hosting subpath.
 
 ## Sources, citation and credit
 
-Default data: [WorldPop](https://www.worldpop.org/), its [Global2 announcement](https://www.worldpop.org/blog/worldpop-global2-global-high-resolution-population-estimates-for-2015-2030/) and [STAC API](https://api.stac.worldpop.org). Standards: [STAC](https://github.com/radiantearth/stac-spec) and [STAC API](https://github.com/radiantearth/stac-api-spec). Additional providers: [Earth Search / Element 84](https://element84.com/earth-search/) and [Microsoft Planetary Computer](https://planetarycomputer.microsoft.com/).
+Default data: [WorldPop](https://www.worldpop.org/), its [Global2 announcement](https://www.worldpop.org/blog/worldpop-global2-global-high-resolution-population-estimates-for-2015-2030/) and [STAC API](https://api.stac.worldpop.org). Standards: [STAC](https://github.com/radiantearth/stac-spec) and [STAC API](https://github.com/radiantearth/stac-api-spec). Additional providers: [Copernicus Data Space Ecosystem](https://dataspace.copernicus.eu/) ([STAC browser](https://browser.stac.dataspace.copernicus.eu/), [STAC API documentation](https://documentation.dataspace.copernicus.eu/APIs/STAC.html)), [Earth Search / Element 84](https://element84.com/earth-search/) and [Microsoft Planetary Computer](https://planetarycomputer.microsoft.com/).
 
 The following supplied references informed the workflow; no source code was copied:
 

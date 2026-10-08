@@ -1,12 +1,38 @@
 // Focused browser-client protocol regressions. Uses Node's native Fetch types.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {STACClient, dateRange, viewportBBox, fetchJSON, localToday, earliestCollectionDate, collectionBBox} from '../web/stac.js';
+import {STACClient, PRESETS, dateRange, viewportBBox, fetchJSON, localToday, earliestCollectionDate, collectionBBox} from '../web/stac.js';
 
 const root = {type: 'Catalog', id: 'synthetic', stac_version: '1.0.0', links: [{rel: 'data', href: './collections'}, {rel: 'search', href: './search'}]};
 const item = (id, extra = {}) => ({type: 'Feature', id, stac_version: '1.0.0', properties: {}, geometry: null, links: [], assets: {}, ...extra});
 const page = (features, links = []) => ({type: 'FeatureCollection', features, links});
 const fetcher = handler => async (url, options) => ({ok: true, url, json: async () => structuredClone(await handler(new URL(url), options))});
+
+test('Copernicus requests a bounded collection list and preserves provider pagination', async () => {
+  const endpoint = 'https://stac.dataspace.copernicus.eu/v1';
+  assert.equal(PRESETS.copernicus[1], endpoint);
+  const calls = [];
+  const client = new STACClient(fetcher(url => {
+    calls.push(url.href);
+    if (url.href === endpoint) return {...root, links: [{rel: 'data', href: endpoint + '/collections'}]};
+    if (url.href === endpoint + '/collections?limit=1000') return {collections: [{id: 'sentinel-2-l2a'}], links: [{rel: 'next', href: './collections?offset=1&limit=1'}]};
+    assert.equal(url.href, endpoint + '/collections?offset=1&limit=1');
+    return {collections: [{id: 'sentinel-1-grd'}], links: []};
+  }));
+  await client.connect(PRESETS.copernicus[1]);
+  assert.equal(calls.length, 2);
+  await client.moreCollections();
+  assert.deepEqual(client.collections.map(c => c.id), ['sentinel-2-l2a', 'sentinel-1-grd']);
+  assert.equal(client.collectionNext, null);
+  for (const advertised of [endpoint + '/collections?limit=5', 'https://fixture.test/collections']) {
+    const other = new STACClient(fetcher(url => {
+      if (url.href === endpoint) return {...root, links: [{rel: 'data', href: advertised}]};
+      assert.equal(url.href, advertised);
+      return {collections: [], links: []};
+    }));
+    await other.connect(endpoint);
+  }
+});
 
 test('collection bounds use the overall extent and discard only elevation axes', () => {
   const collection = bbox => ({extent: {spatial: {bbox}}});

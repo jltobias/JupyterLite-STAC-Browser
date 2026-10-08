@@ -1,0 +1,27 @@
+{
+  "type": "Feature",
+  "stac_version": "1.1.0",
+  "id": "synthetic-sentinel-2",
+  "collection": "sentinel-2-l2a",
+  "geometry": {"type": "Polygon", "coordinates": [[[2.2, 48.7], [2.5, 48.7], [2.5, 49], [2.2, 49], [2.2, 48.7]]]},
+  "bbox": [2.2, 48.7, 2.5, 49],
+  "properties": {
+    "datetime": "2024-06-13T10:46:19Z",
+    "description": "Synthetic fixture shaped like Copernicus metadata; not an actual dataset.",
+    "auth:schemes": {"oidc": {"type": "openIdConnect"}, "s3": {"type": "s3"}}
+  },
+  "links": [],
+  "assets": {
+    "B04_10m": {
+      "title": "Red band",
+      "href": "s3://fixture-eodata/red.jp2",
+      "type": "image/jp2",
+      "auth:refs": ["s3"],
+      "alternate": {"https": {"href": "https://fixture.test/download/red.jp2", "auth:refs": ["oidc"]}}
+    },
+    "product": {"title": "Product", "href": "https://fixture.test/download/product.zip", "auth:refs": ["oidc"]},
+    "s3_only": {"title": "S3 only", "href": "s3://fixture-eodata/only.jp2"},
+    "unsafe_alternate": {"title": "Unsafe alternate", "href": "s3://fixture-eodata/bad.jp2", "alternate": {"https": {"href": "javascript:alert(1)"}}},
+    "unsafe_primary": {"title": "Unsafe primary", "href": "javascript:alert(1)"}
+  }
+}

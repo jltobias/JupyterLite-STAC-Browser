@@ -13,13 +13,14 @@ from playwright.sync_api import sync_playwright, expect
 ROOT = Path(__file__).resolve().parents[1]
 CATALOG = json.loads((ROOT / "tests/fixtures/catalog.json").read_text(encoding="utf-8"))
 ITEMS = json.loads((ROOT / "tests/fixtures/items.json").read_text(encoding="utf-8"))
+COPERNICUS_ITEM = json.loads((ROOT / "tests/fixtures/copernicus-item.json").read_text(encoding="utf-8"))
 
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--base-path", default="")
     parser.add_argument("--chrome", help="Optional installed Chrome executable")
-    parser.add_argument("--live", action="store_true", help="Also smoke-test current WorldPop via browser CORS")
+    parser.add_argument("--live", action="store_true", help="Also smoke-test current WorldPop and Copernicus via browser CORS")
     parser.add_argument("--source", action="store_true", help="Test explorer source without rebuilding the combined site")
     args = parser.parse_args()
     base = args.base_path.rstrip("/")
@@ -109,6 +110,28 @@ def main():
 
             page.route("https://api.stac.worldpop.org/**", fixture)
             page.route("https://fixture.test/**", fixture)
+            copernicus = "https://stac.dataspace.copernicus.eu/v1"
+
+            def copernicus_fixture(route):
+                req = route.request
+                calls.append({"url": req.url, "method": req.method, "body": req.post_data})
+                parts = urlsplit(req.url)
+                if req.url == copernicus:
+                    data = {**CATALOG, "links": [{"rel": "data", "href": copernicus + "/collections"}, {"rel": "search", "href": copernicus + "/search"}]}
+                elif req.url == copernicus + "/collections?limit=1000":
+                    data = {"collections": [
+                        {"id": "sentinel-2-l2a", "title": "Sentinel-2 Level-2A", "license": "proprietary", "providers": [{"name": "Copernicus fixture provider"}], "extent": {"spatial": {"bbox": [[-180, -90, 180, 90]]}, "temporal": {"interval": [["2015-06-27T00:00:00Z", None]]}}},
+                        {"id": "ccm-optical", "title": "CCM optical"},
+                    ], "links": [{"rel": "next", "href": copernicus + "/collections?offset=2&limit=2"}]}
+                elif req.url == copernicus + "/collections?offset=2&limit=2":
+                    data = {"collections": [{"id": "sentinel-1-grd", "title": "Sentinel-1 GRD"}], "links": []}
+                elif parts.path == "/v1/search":
+                    data = {"type": "FeatureCollection", "features": [COPERNICUS_ITEM], "links": []}
+                else:
+                    raise AssertionError(f"Unexpected Copernicus request: {req.url}")
+                route.fulfill(status=200, body=json.dumps(data), content_type="application/json", headers={"Access-Control-Allow-Origin": "*"})
+
+            page.route("https://stac.dataspace.copernicus.eu/**", copernicus_fixture)
             page.route("https://tile.openstreetmap.org/**", lambda route: route.abort())
             page.route("https://fonts.googleapis.com/**", lambda route: route.abort())
             page.goto(address + "/explorer/")
@@ -293,6 +316,44 @@ def main():
               return true;
             }""")
             assert protocol
+            # Switching from WorldPop to the second preset uses the real provider URL shape.
+            assert page.locator("#preset option").evaluate_all("els => els.map(e=>e.value)") == ["worldpop", "copernicus", "earthsearch", "planetary", "custom"]
+            page.locator("#preset").select_option("copernicus")
+            expect(page.locator("#endpoint")).to_have_value(copernicus)
+            page.locator("#connect").click()
+            expect(page.locator("#collection option")).to_have_count(3)
+            assert page.locator("#collection option").evaluate_all("els => els.map(e=>e.value)") == ["", "ccm-optical", "sentinel-2-l2a"]
+            page.locator("#collection").select_option("sentinel-2-l2a")
+            expect(page.locator("#start")).to_have_value("2015-06-27")
+            expect(page.locator("#end")).to_have_value("2026-10-08")
+            expect(page.locator("#bbox")).to_have_value("-180,-90,180,90")
+            page.locator("#more-collections").click()
+            expect(page.locator("#more-collections")).to_be_hidden()
+            expect(page.locator("#collection")).to_have_value("sentinel-2-l2a")
+            assert page.locator("#collection option").evaluate_all("els => els.map(e=>e.value)") == ["", "ccm-optical", "sentinel-1-grd", "sentinel-2-l2a"]
+            page.locator("#bbox").fill("2.2,48.7,2.5,49")
+            page.locator("#start").fill("2024-06-01")
+            page.locator("#end").fill("2024-06-15")
+            page.locator("#limit").select_option("10")
+            page.locator("#search").click()
+            expect(page.locator(".result-card")).to_have_count(1)
+            assert calls[-1]["url"].startswith(copernicus + "/search?")
+            assert parse_qs(urlsplit(calls[-1]["url"]).query) == {"bbox": ["2.2,48.7,2.5,49"], "collections": ["sentinel-2-l2a"], "datetime": ["2024-06-01T00:00:00Z/2024-06-15T23:59:59.999999Z"], "limit": ["10"]}
+            page.locator(".result-card").click()
+            expect(page.locator("#metadata")).to_contain_text("synthetic-sentinel-2")
+            expect(page.locator("#metadata dl")).to_contain_text("proprietary")
+            expect(page.locator("#metadata dl")).to_contain_text("Copernicus fixture provider")
+            red = page.locator("#metadata").get_by_role("link", name="Red band (HTTPS)", exact=True)
+            expect(red).to_have_attribute("href", "https://fixture.test/download/red.jp2")
+            expect(red.locator("..")).to_contain_text("Provider authentication required")
+            expect(page.locator("#metadata").get_by_role("link", name="Product", exact=True).locator("..")).to_contain_text("Provider authentication required")
+            expect(page.locator("#metadata")).to_contain_text("S3 only (S3; use a compatible client)")
+            assert page.locator("#metadata a[href^='javascript:'], #metadata a[href^='s3:']").count() == 0
+            assert page.locator("#metadata a").count() == 2
+            with page.expect_download() as download_info:
+                page.locator("#export-geojson").click()
+            exported = json.loads(Path(download_info.value.path()).read_text())
+            assert exported["features"][0]["assets"] == COPERNICUS_ITEM["assets"]
             page.set_viewport_size({"width": 390, "height": 844})
             assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
             output = ROOT / "test-results"
@@ -314,6 +375,19 @@ def main():
                 live = page.evaluate("""async () => {const root=await fetch('https://api.stac.worldpop.org').then(r=>r.json());const response=await fetch('https://api.stac.worldpop.org/search?collections=UGA&bbox=29,-2,35,5&limit=1');const items=await response.json();return {root:root.type,status:response.status,count:items.features?.length};}""")
                 assert live == {"root": "Catalog", "status": 200, "count": 1}, live
                 print("Live WorldPop browser CORS smoke:", live)
+                page.unroute("https://stac.dataspace.copernicus.eu/**", copernicus_fixture)
+                live = page.evaluate("""async moduleURL => {
+                  const {STACClient,PRESETS}=await import(moduleURL);
+                  const client=new STACClient(); await client.connect(PRESETS.copernicus[1]);
+                  if(!client.collections.some(c=>c.id==='sentinel-2-l2a')) throw Error('Sentinel-2 collection missing');
+                  await client.search({collection:'sentinel-2-l2a',bbox:[2.2,48.7,2.5,49],start:'2024-06-01',end:'2024-06-15',limit:1});
+                  const first=client.items[0]?.id;
+                  if(!first || !client.next) throw Error('Expected a result and next page');
+                  await client.more();
+                  return {collections:client.collections.length,first,count:client.items.length};
+                }""", address + "/explorer/stac.js")
+                assert live["count"] == 2, live
+                print("Live Copernicus browser CORS smoke:", live)
             assert not errors, errors
             browser.close()
         print("Browser fixture tests passed: protocol, UI, escaping, static catalogs, exports, recovery, responsive layout" + ("." if args.source else ", and site navigation."))

@@ -1,6 +1,7 @@
 /** Browser-native STAC protocol. No proxy, credentials, or raster downloads. */
 export const PRESETS = {
   worldpop: ['WorldPop', 'https://api.stac.worldpop.org'],
+  copernicus: ['Copernicus Data Space', 'https://stac.dataspace.copernicus.eu/v1'],
   earthsearch: ['Earth Search', 'https://earth-search.aws.element84.com/v1'],
   planetary: ['Planetary Computer', 'https://planetarycomputer.microsoft.com/api/stac/v1'],
 };
@@ -150,6 +151,8 @@ export class STACClient {
     const collectionLink = links(root, 'data').find(l => !l.type || (typeof l.type === 'string' && l.type.includes('json')));
     if (collectionLink) {
       const req = {url: safeURL(collectionLink.href, rootURL, true), method: 'GET'};
+      // CDSE defaults to 10 collections per page; request our bounded list in one page.
+      if (req.url === `${PRESETS.copernicus[1]}/collections`) req.url += '?limit=1000';
       const result = await this.request(req);
       if (!Array.isArray(result.data?.collections)) throw new Error('The advertised collections link did not return a collections array.');
       collections = uniqueCollections(result.data.collections);

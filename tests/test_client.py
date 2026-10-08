@@ -10,7 +10,7 @@ from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "notebooks"))
-from stac_browser import STACBrowser, date_range, https_url, next_request, validate_bbox, explorer_url
+from stac_browser import STACBrowser, PRESETS, date_range, https_url, next_request, validate_bbox, explorer_url
 
 CATALOG = json.loads((ROOT / "tests/fixtures/catalog.json").read_text(encoding="utf-8"))
 ITEMS = json.loads((ROOT / "tests/fixtures/items.json").read_text(encoding="utf-8"))
@@ -78,6 +78,37 @@ class ValidationTests(unittest.TestCase):
 
 
 class ClientTests(unittest.IsolatedAsyncioTestCase):
+    async def test_copernicus_collection_page_size_preserves_advertised_pagination(self):
+        endpoint = "https://stac.dataspace.copernicus.eu/v1"
+        self.assertEqual(PRESETS["copernicus"], endpoint)
+        calls = []
+
+        async def fetch(req):
+            calls.append(req["url"])
+            if req["url"] == endpoint:
+                data = {**CATALOG, "links": [{"rel": "data", "href": endpoint + "/collections"}]}
+            elif req["url"] == endpoint + "/collections?limit=1000":
+                data = {"collections": [{"id": "sentinel-2-l2a"}], "links": [{"rel": "next", "href": "./collections?offset=1&limit=1"}]}
+            elif req["url"] == endpoint + "/collections?offset=1&limit=1":
+                data = {"collections": [{"id": "sentinel-1-grd"}], "links": []}
+            else:
+                self.fail(f"Unexpected request: {req}")
+            return data, req["url"]
+
+        client = await STACBrowser(PRESETS["copernicus"], fetch).connect()
+        self.assertEqual(len(calls), 2)
+        await client.more_collections()
+        self.assertEqual([c["id"] for c in client.collections], ["sentinel-2-l2a", "sentinel-1-grd"])
+        self.assertIsNone(client.collection_next)
+        # Explicit provider parameters and other hosts are left untouched.
+        for url in [endpoint + "/collections?limit=5", "https://fixture.test/collections"]:
+            async def advertised(req):
+                if req["url"] == endpoint:
+                    return {**CATALOG, "links": [{"rel": "data", "href": url}]}, req["url"]
+                self.assertEqual(req["url"], url)
+                return {"collections": [], "links": []}, req["url"]
+            await STACBrowser(endpoint, advertised).connect()
+
     async def test_search_pagination_provenance_and_collections(self):
         fake = Fixture()
         client = await STACBrowser("https://fixture.test/", fake).connect()
