@@ -44,6 +44,27 @@ export function dateRange(start = '', end = '') {
   return start || end ? `${start ? start + 'T00:00:00Z' : '..'}/${end ? end + 'T23:59:59.999999Z' : '..'}` : undefined;
 }
 
+export function localToday(now = new Date()) {
+  return [now.getFullYear(), now.getMonth() + 1, now.getDate()].map((n, i) => String(n).padStart(i ? 2 : 4, '0')).join('-');
+}
+
+export function earliestCollectionDate(collections) {
+  const fallback = '2000-01-01';
+  const starts = [];
+  for (const collection of collections) {
+    const intervals = collection?.extent?.temporal?.interval;
+    if (!Array.isArray(intervals) || !intervals.length) return fallback;
+    for (const interval of intervals) {
+      const start = Array.isArray(interval) ? interval[0] : null;
+      // Use the requested default when metadata cannot provide a start date.
+      if (typeof start !== 'string' || !/^\d{4}-\d{2}-\d{2}[Tt]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:[Zz]|[+-]\d{2}:\d{2})$/.test(start) || !Number.isFinite(Date.parse(start))) return fallback;
+      try { dateRange(start.slice(0, 10)); } catch { return fallback; }
+      starts.push(new Date(start).toISOString().slice(0, 10));
+    }
+  }
+  return starts.sort()[0] || fallback;
+}
+
 export function nextRequest(link, previous) {
   const url = safeURL(link.href, previous.url, true);
   const method = (link.method || 'GET').toUpperCase();

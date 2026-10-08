@@ -1,6 +1,7 @@
 """Browser regression against synthetic fixtures, served at root or a repo subpath."""
 import argparse
 import copy
+from datetime import datetime, timezone
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 import json
@@ -40,10 +41,13 @@ def main():
     try:
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True, **({"executable_path": args.chrome} if args.chrome else {}))
-            page = browser.new_page(viewport={"width": 1440, "height": 1000})
+            page = browser.new_page(viewport={"width": 1440, "height": 1000}, timezone_id="America/Los_Angeles")
+            # October 8 locally, October 9 in UTC: Until must use the visitor's date.
+            page.clock.set_fixed_time(datetime(2026, 10, 9, 2, tzinfo=timezone.utc))
             errors = []
             page.on("pageerror", lambda error: errors.append(str(error)))
             calls = []
+            pending_connections = []
 
             def fixture(route):
                 req = route.request
@@ -52,8 +56,20 @@ def main():
                 headers = {"Access-Control-Allow-Origin": "*"}
                 if path in ("/", ""):
                     data = CATALOG
+                elif path == "/delayed":
+                    pending_connections.append(route)
+                    return
+                elif path == "/capped":
+                    data = {**CATALOG, "links": [{"rel": "data", "href": "./capped-collections"}]}
+                elif path == "/capped-collections":
+                    data = {"collections": [{"id": f"CAP-{i}", "extent": {"temporal": {"interval": [["2020-01-01T00:00:00Z", None]]}}} for i in range(1000)], "links": [{"rel": "next", "href": "./unloaded-older-collections"}]}
                 elif path == "/collections":
-                    data = {"collections": [{"id": "TEST", "title": "Synthetic fixture", "license": "proprietary", "providers": [{"name": "Fixture provider"}]}, {"id": "OTHER"}], "links": [{"rel": "next", "href": "./collections2"}]}
+                    data = {"collections": [
+                        {"id": "TEST", "title": "Synthetic fixture", "license": "proprietary", "providers": [{"name": "Fixture provider"}], "extent": {"temporal": {"interval": [["2020-01-01T00:00:00Z", None]]}}},
+                        {"id": "OTHER", "extent": {"temporal": {"interval": [["2010-06-15T00:00:00Z", None]]}}},
+                    ], "links": [{"rel": "next", "href": "./collections2"}]}
+                elif path == "/collections2":
+                    data = {"collections": [{"id": "EARLY", "extent": {"temporal": {"interval": [["1985-02-03T00:00:00Z", None]]}}}], "links": []}
                 elif path == "/search":
                     if parse_qs(urlsplit(req.url).query).get("collections") == ["TEST"]:
                         data = copy.deepcopy(ITEMS)
@@ -67,6 +83,10 @@ def main():
                     data = {"type": "FeatureCollection", "features": [ITEMS["features"][0], {**ITEMS["features"][1], "id": "synthetic-3"}], "links": []}
                 elif path == "/static.json":
                     data = {**CATALOG, "links": [{"rel": "item", "href": "./item.json", "title": "Synthetic static item"}]}
+                elif path == "/collection.json":
+                    data = {**CATALOG, "type": "Collection", "id": "MISSING", "links": []}
+                elif path == "/dated-collection.json":
+                    data = {**CATALOG, "type": "Collection", "id": "DATED", "extent": {"temporal": {"interval": [["2012-04-05T00:00:00Z", None]]}}, "links": []}
                 elif path == "/item.json":
                     data = ITEMS["features"][0]
                 elif path == "/wrong":
@@ -88,7 +108,33 @@ def main():
             page.goto(address + "/explorer/")
             expect(page.locator("#search")).to_be_enabled(timeout=15000)
             expect(page.locator("#more-collections")).to_be_visible()
+            expect(page.locator("#start")).to_have_value("2000-01-01")
+            expect(page.locator("#end")).to_have_value("2026-10-08")
+            page.locator("#more-collections").click()
+            expect(page.locator("#start")).to_have_value("1985-02-03")
+            page.locator("#connect").click()
+            expect(page.locator("#more-collections")).to_be_visible()
+            expect(page.locator("#search")).to_be_enabled()
             page.locator("#collection").select_option("TEST")
+            expect(page.locator("#start")).to_have_value("2020-01-01")
+            page.locator("#start").fill("2019-01-01")
+            page.locator("#end").fill("2020-03-04")
+            page.locator("#more-collections").click()
+            expect(page.locator("#more-collections")).to_be_hidden()
+            expect(page.locator("#start")).to_have_value("2019-01-01")
+            expect(page.locator("#end")).to_have_value("2020-03-04")
+            page.locator("#collection").select_option("OTHER")
+            expect(page.locator("#start")).to_have_value("2010-06-15")
+            expect(page.locator("#end")).to_have_value("2026-10-08")
+            page.locator("#collection").select_option("")
+            expect(page.locator("#start")).to_have_value("1985-02-03")
+            page.locator("#collection").select_option("TEST")
+            expect(page.locator("#start")).to_have_value("2020-01-01")
+            page.locator("#start").fill("")
+            page.locator("#end").fill("")
+            page.locator("#use-map").click()
+            expect(page.locator("#start")).to_have_value("")
+            expect(page.locator("#end")).to_have_value("")
             page.locator("#bbox").fill("29,-2,35,5")
             page.locator("#start").fill("2020-01-01")
             page.locator("#end").fill("2020-01-02")
@@ -145,6 +191,8 @@ def main():
                 expect(page.locator("#collection option")).to_have_count(1)
                 expect(page.locator("#more-collections")).to_be_hidden()
                 expect(page.locator("#more-collections")).to_be_disabled()
+                expect(page.locator("#start")).to_have_value("2000-01-01")
+                expect(page.locator("#end")).to_have_value("2026-10-08")
             page.locator("#endpoint").fill("https://fixture.test/static.json")
             page.locator("#connect").click()
             expect(page.locator("#status")).to_contain_text("Static catalog connected")
@@ -153,6 +201,27 @@ def main():
             expect(page.locator("#count")).to_have_text("1")
             expect(page.locator("#export-query")).to_be_enabled()
             expect(page.locator("#metadata")).to_contain_text("Not supplied — consult provider")
+            for endpoint, expected in [("collection.json", "2000-01-01"), ("dated-collection.json", "2012-04-05")]:
+                page.locator("#endpoint").fill("https://fixture.test/" + endpoint)
+                page.locator("#connect").click()
+                expect(page.locator("#status")).to_contain_text("Static catalog connected")
+                expect(page.locator("#start")).to_have_value(expected)
+                expect(page.locator("#end")).to_have_value("2026-10-08")
+            page.locator("#endpoint").fill("https://fixture.test/delayed")
+            page.locator("#connect").click()
+            expect(page.locator("#start")).to_be_disabled()
+            expect(page.locator("#end")).to_be_disabled()
+            assert len(pending_connections) == 1
+            pending_connections.pop().fulfill(status=200, body=json.dumps(CATALOG), content_type="application/json", headers={"Access-Control-Allow-Origin": "*"})
+            expect(page.locator("#search")).to_be_enabled()
+            expect(page.locator("#start")).to_be_enabled()
+            expect(page.locator("#end")).to_be_enabled()
+            page.locator("#endpoint").fill("https://fixture.test/capped")
+            page.locator("#connect").click()
+            expect(page.locator("#catalog-summary")).to_contain_text("1000 collections loaded")
+            expect(page.locator("#start")).to_have_value("2000-01-01")
+            page.locator("#collection").select_option("CAP-0")
+            expect(page.locator("#start")).to_have_value("2020-01-01")
             protocol = page.evaluate("""async () => {
               const {safeURL,bboxValue,dateRange,nextRequest,fetchJSON} = await import('./stac.js');
               const rejects = fn => {try {fn(); return false;} catch {return true;}};

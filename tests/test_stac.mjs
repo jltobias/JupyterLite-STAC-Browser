@@ -1,12 +1,35 @@
 // Focused browser-client protocol regressions. Uses Node's native Fetch types.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {STACClient, dateRange, viewportBBox, fetchJSON} from '../web/stac.js';
+import {STACClient, dateRange, viewportBBox, fetchJSON, localToday, earliestCollectionDate} from '../web/stac.js';
 
 const root = {type: 'Catalog', id: 'synthetic', stac_version: '1.0.0', links: [{rel: 'data', href: './collections'}, {rel: 'search', href: './search'}]};
 const item = (id, extra = {}) => ({type: 'Feature', id, stac_version: '1.0.0', properties: {}, geometry: null, links: [], assets: {}, ...extra});
 const page = (features, links = []) => ({type: 'FeatureCollection', features, links});
 const fetcher = handler => async (url, options) => ({ok: true, url, json: async () => structuredClone(await handler(new URL(url), options))});
+
+test('date defaults use earliest UTC coverage, with 2000 fallback for unavailable starts', () => {
+  const collection = intervals => ({extent: {temporal: {interval: intervals}}});
+  assert.equal(earliestCollectionDate([collection([['2015-01-01T00:00:00Z', null]])]), '2015-01-01');
+  assert.equal(earliestCollectionDate([
+    collection([['2020-01-01T00:00:00Z', null], ['2010-05-03T10:00:00Z', null]]),
+    collection([['1985-06-01T00:00:00Z', null]]),
+  ]), '1985-06-01');
+  assert.equal(earliestCollectionDate([collection([['2015-01-01T00:30:00+02:00', null]])]), '2014-12-31');
+  for (const collections of [[], [{}], [null], [collection([])], [collection([[null, null]])],
+    [collection([['garbage', null]])], [collection([['2023-02-29T00:00:00Z', null]])],
+    [collection([['2015-01-01T00:00:00', null]])],
+    [collection([[null, null], ['2015-01-01T00:00:00Z', null]])]]) {
+    assert.equal(earliestCollectionDate(collections), '2000-01-01');
+  }
+  // A known future start stays truthful; existing range validation handles From > Until.
+  assert.equal(earliestCollectionDate([collection([['2099-01-01T00:00:00Z', null]])]), '2099-01-01');
+});
+
+test('today uses local calendar components and pads month/day', () => {
+  assert.equal(localToday(new Date(2026, 0, 2, 23, 59)), '2026-01-02');
+  assert.equal(localToday(new Date(2026, 9, 8, 0, 1)), '2026-10-08');
+});
 
 test('end dates include fractional seconds; wrapped and whole-world viewports', () => {
   assert.equal(dateRange('', '2024-02-29'), '../2024-02-29T23:59:59.999999Z');

@@ -12,6 +12,8 @@ Static catalogs can be explored through `child` and `item` links. The explorer e
 
 Pan and zoom to your area, then select **Use map extent**. Bounding boxes use WGS84 longitude and latitude in **west, south, east, north** order. Manual edits are allowed. Split an area that crosses the antimeridian into two searches. Optional dates form an inclusive day interval; a blank endpoint is open-ended.
 
+**From** starts at the selected collection's earliest advertised temporal date, or **January 1, 2000** when no start is available. **Until** starts at today's date in your browser's local time zone. Connecting to a catalog or changing collections resets these defaults; both fields remain editable and can be cleared after loading. For **All collections**, From uses the earliest start once the complete collection list is loaded. If any relevant start is missing, invalid, or open-ended, more collections remain to load, or the list reaches its 1,000-collection limit, From uses January 1, 2000. Loading more collections preserves dates you edited.
+
 WorldPop's `datetime` may describe a product release rather than the population reference year. Inspect `properties.year` and `properties.project` in the original item JSON to identify the population period and product family. Leave dates blank to discover all available releases.
 
 Choose a page size from 10 to 100. Each search returns a page of metadata, and **Load next page** requests one additional advertised page. The client follows GET or POST next links, supports POST body merging, deduplicates by collection and item ID, and stops at 500 unique items.

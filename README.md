@@ -12,7 +12,7 @@ The [Pages workflow](https://github.com/jltobias/JupyterLite-STAC-Browser/action
 
 1. Open the Explorer. It connects to [WorldPop's STAC API](https://api.stac.worldpop.org).
 2. Choose a country collection such as `UGA` or `KEN`, move the map, and select **Use map extent**.
-3. Search, select a footprint, and inspect the original metadata, providers, license and asset links.
+3. **From** defaults to the collection's earliest advertised date (January 1, 2000 if unavailable) and **Until** to today's date in your browser. Switching collections resets these defaults; you can edit or clear either date. Search, select a footprint, and inspect the original metadata, providers, license and asset links.
 4. Export loaded Items as GeoJSON and save the query as Search JSON. Export copies resolve relative asset/source links to absolute URLs; the client keeps the original metadata intact. The provenance `retrieved_at` value records the last successful item/page retrieval and stays unchanged when exporting again.
 5. Open JupyterLite and run the three tutorials: launch the map, search WorldPop, explore other catalogs and reuse exports.
 

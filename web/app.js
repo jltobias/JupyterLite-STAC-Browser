@@ -1,4 +1,4 @@
-import {STACClient, PRESETS, safeURL, viewportBBox} from './stac.js';
+import {STACClient, PRESETS, safeURL, viewportBBox, localToday, earliestCollectionDate} from './stac.js';
 const $ = id => document.getElementById(id);
 const client = new STACClient();
 const map = L.map('map', {worldCopyJump: true}).setView([-2, 32], 5);
@@ -6,9 +6,11 @@ L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom: 18, attr
 const footprints = L.featureGroup().addTo(map);
 let itemLayers = new WeakMap();
 let busy = false, connected = false;
+let startEdited = false;
 function el(tag, text, className) { const n = document.createElement(tag); if (text != null) n.textContent = text; if (className) n.className = className; return n; }
 function status(text, error = false) { $('status').textContent = text; $('status').className = error ? 'error' : ''; }
 function controls() {
+  $('start').disabled = $('end').disabled = busy;
   $('connect').disabled = busy;
   $('more').disabled = busy || !connected || !client.next;
   $('more-collections').disabled = busy || !connected || !client.collectionNext;
@@ -29,14 +31,24 @@ function collectionOptions() {
   $('collection').value = client.collections.some(c => c.id === selected) ? selected : '';
   $('more-collections').hidden = !client.collectionNext || client.collections.length >= 1000;
 }
+function dateDefaults(reset = true) {
+  const selected = $('collection').value;
+  // At the list limit, an absent next link does not prove discovery is complete.
+  const incomplete = client.collectionNext || client.collections.length >= 1000;
+  const collections = selected ? client.collections.filter(c => c.id === selected) : (incomplete ? [] : client.collections);
+  if (reset || !startEdited) $('start').value = earliestCollectionDate(collections);
+  if (reset) { $('end').value = localToday(); startEdited = false; }
+}
+$('collection').onchange = () => dateDefaults();
+$('start').oninput = () => { startEdited = true; };
 async function connect(url) {
-  connected = false; client.reset(); renderResults(); collectionOptions(); controls();
+  connected = false; client.reset(); renderResults(); collectionOptions(); dateDefaults(); controls();
   $('metadata').replaceChildren(el('p', 'Select a footprint or an item to inspect its metadata.', 'empty'));
   status('Connecting to catalog…'); $('catalog-links').replaceChildren();
   $('catalog-summary').textContent = 'Connecting…';
   try { await client.connect(url); }
   catch (error) { $('catalog-summary').textContent = 'Connection unavailable. Check the URL or try another catalog.'; throw error; }
-  connected = true; $('endpoint').value = client.url; collectionOptions();
+  connected = true; $('endpoint').value = client.url; collectionOptions(); dateDefaults();
   $('catalog-summary').textContent = `${client.root.title || client.root.id} · ${client.collections.length} collections loaded${client.searchLink ? '' : ' · Static catalog: remote Item Search is not advertised.'}`;
   for (const link of client.catalogLinks()) {
     const button = el('button', `${link.rel} · ${link.title || link.href}`);
@@ -65,7 +77,7 @@ $('search-form').onsubmit = event => { event.preventDefault(); run(async () => {
   status(client.items.length ? `${client.items.length} items loaded. Select an item to inspect its assets.${client.next ? ' Another page is available.' : ''}` : 'No items match this area and date range. Try a larger area or remove the date filter.');
 }); };
 $('more').onclick = () => run(async () => { status('Loading next page…'); await client.more(); renderResults(); status(`${client.items.length} unique items loaded (maximum 500).`); });
-$('more-collections').onclick = () => run(async () => { await client.moreCollections(); collectionOptions(); status(`${client.collections.length} collections loaded (maximum 1000).`); });
+$('more-collections').onclick = () => run(async () => { await client.moreCollections(); collectionOptions(); dateDefaults(false); status(`${client.collections.length} collections loaded (maximum 1000).`); });
 function renderResults() {
   $('results').replaceChildren(); footprints.clearLayers(); $('count').textContent = client.items.length;
   itemLayers = new WeakMap();
