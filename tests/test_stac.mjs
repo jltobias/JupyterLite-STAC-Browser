@@ -1,12 +1,32 @@
 // Focused browser-client protocol regressions. Uses Node's native Fetch types.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {STACClient, dateRange, viewportBBox, fetchJSON, localToday, earliestCollectionDate} from '../web/stac.js';
+import {STACClient, dateRange, viewportBBox, fetchJSON, localToday, earliestCollectionDate, collectionBBox} from '../web/stac.js';
 
 const root = {type: 'Catalog', id: 'synthetic', stac_version: '1.0.0', links: [{rel: 'data', href: './collections'}, {rel: 'search', href: './search'}]};
 const item = (id, extra = {}) => ({type: 'Feature', id, stac_version: '1.0.0', properties: {}, geometry: null, links: [], assets: {}, ...extra});
 const page = (features, links = []) => ({type: 'FeatureCollection', features, links});
 const fetcher = handler => async (url, options) => ({ok: true, url, json: async () => structuredClone(await handler(new URL(url), options))});
+
+test('collection bounds use the overall extent and discard only elevation axes', () => {
+  const collection = bbox => ({extent: {spatial: {bbox}}});
+  const bounds = [29.123456789, -2, 35.987654321, 5];
+  assert.deepEqual(collectionBBox(collection([bounds, [30, 0, 31, 1], [32, 2, 33, 3]])), bounds);
+  assert.deepEqual(collectionBBox(collection([[-123, 37, 100, -121, 39, 900]])), [-123, 37, -121, 39]);
+  assert.deepEqual(collectionBBox(collection([[170, -10, -170, 10]])), [170, -10, -170, 10]);
+  assert.deepEqual(collectionBBox(collection([[-180, -90, 180, 90]])), [-180, -90, 180, 90]);
+  assert.deepEqual(collectionBBox(collection([[30, 0, 30, 0]])), [30, 0, 30, 0]);
+  assert.deepEqual(collectionBBox(collection([[30, 0, 30, 2]])), [30, 0, 30, 2]);
+  assert.deepEqual(collectionBBox(collection([[30, 0, 32, 0]])), [30, 0, 32, 0]);
+  assert.deepEqual(collectionBBox(collection([[180, 0, -180, 1]])), [180, 0, -180, 1]);
+  for (const bbox of [[], {}, [[0, 1, 2]], [[0, 2, 1, 0]],
+    [[-181, 0, 1, 2]], [[0, -91, 1, 2]], [[0, 0, 181, 2]], [[0, 0, 1, 91]],
+    [[-123, 37, 900, -121, 39, 100]], [[0, 0, NaN, 1]], [['0', 0, 1, 1]]]) {
+    assert.equal(collectionBBox(collection(bbox)), null);
+  }
+  assert.equal(collectionBBox({}), null);
+  assert.equal(collectionBBox(null), null);
+});
 
 test('date defaults use earliest UTC coverage, with 2000 fallback for unavailable starts', () => {
   const collection = intervals => ({extent: {temporal: {interval: intervals}}});

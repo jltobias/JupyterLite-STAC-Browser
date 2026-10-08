@@ -65,8 +65,8 @@ def main():
                     data = {"collections": [{"id": f"CAP-{i}", "extent": {"temporal": {"interval": [["2020-01-01T00:00:00Z", None]]}}} for i in range(1000)], "links": [{"rel": "next", "href": "./unloaded-older-collections"}]}
                 elif path == "/collections":
                     data = {"collections": [
-                        {"id": "TEST", "title": "Synthetic fixture", "license": "proprietary", "providers": [{"name": "Fixture provider"}], "extent": {"temporal": {"interval": [["2020-01-01T00:00:00Z", None]]}}},
-                        {"id": "OTHER", "extent": {"temporal": {"interval": [["2010-06-15T00:00:00Z", None]]}}},
+                        {"id": "TEST", "title": "Synthetic fixture", "license": "proprietary", "providers": [{"name": "Fixture provider"}], "extent": {"temporal": {"interval": [["2020-01-01T00:00:00Z", None]]}, "spatial": {"bbox": [[29.123456789, -2, 35.987654321, 5]]}}},
+                        {"id": "OTHER", "extent": {"temporal": {"interval": [["2010-06-15T00:00:00Z", None]]}, "spatial": {"bbox": [[-123, 37, 100, -121, 39, 900]]}}},
                     ], "links": [{"rel": "next", "href": "./collections2"}]}
                 elif path == "/collections2":
                     data = {"collections": [{"id": "EARLY", "extent": {"temporal": {"interval": [["1985-02-03T00:00:00Z", None]]}}}], "links": []}
@@ -87,6 +87,12 @@ def main():
                     data = {**CATALOG, "type": "Collection", "id": "MISSING", "links": []}
                 elif path == "/dated-collection.json":
                     data = {**CATALOG, "type": "Collection", "id": "DATED", "extent": {"temporal": {"interval": [["2012-04-05T00:00:00Z", None]]}}, "links": []}
+                elif path == "/crossing-collection.json":
+                    data = {**CATALOG, "type": "Collection", "id": "CROSSING", "extent": {"spatial": {"bbox": [[170, -10, -170, 10]]}}, "links": [{"rel": "search", "href": "./search"}]}
+                elif path == "/point-collection.json":
+                    data = {**CATALOG, "type": "Collection", "id": "POINT", "extent": {"spatial": {"bbox": [[30, 0, 30, 0]]}}, "links": [{"rel": "search", "href": "./search"}]}
+                elif path == "/spatial-static.json":
+                    data = {**CATALOG, "type": "Collection", "id": "STATIC", "extent": {"spatial": {"bbox": [[-123, 37, -121, 39]]}}, "links": [{"rel": "item", "href": "./item.json"}]}
                 elif path == "/item.json":
                     data = ITEMS["features"][0]
                 elif path == "/wrong":
@@ -115,24 +121,53 @@ def main():
             page.locator("#connect").click()
             expect(page.locator("#more-collections")).to_be_visible()
             expect(page.locator("#search")).to_be_enabled()
+            page.evaluate("""() => {
+              const fit = L.Map.prototype.fitBounds;
+              L.Map.prototype.fitBounds = function(...args) {window.previewMap = this; return fit.apply(this, args);};
+            }""")
+            searches_before_selection = len([call for call in calls if urlsplit(call["url"]).path == "/search"])
             page.locator("#collection").select_option("TEST")
             expect(page.locator("#start")).to_have_value("2020-01-01")
+            expect(page.locator("#bbox")).to_have_value("29.123456789,-2,35.987654321,5")
+            assert page.evaluate("""() => {
+              const m=window.previewMap, b=m.getBounds(), c=m.getCenter();
+              return m.getZoom()>5 && b.contains([[-2,29.123456789],[5,35.987654321]]) && c.lng>29 && c.lng<36;
+            }""")
+            assert len([call for call in calls if urlsplit(call["url"]).path == "/search"]) == searches_before_selection
             page.locator("#start").fill("2019-01-01")
             page.locator("#end").fill("2020-03-04")
+            page.locator("#bbox").fill("1,2,3,4")
+            view_before_pagination = page.evaluate("[previewMap.getCenter().lat,previewMap.getCenter().lng,previewMap.getZoom()]")
             page.locator("#more-collections").click()
             expect(page.locator("#more-collections")).to_be_hidden()
             expect(page.locator("#start")).to_have_value("2019-01-01")
             expect(page.locator("#end")).to_have_value("2020-03-04")
+            expect(page.locator("#bbox")).to_have_value("1,2,3,4")
+            assert page.evaluate("[previewMap.getCenter().lat,previewMap.getCenter().lng,previewMap.getZoom()]") == view_before_pagination
             page.locator("#collection").select_option("OTHER")
             expect(page.locator("#start")).to_have_value("2010-06-15")
             expect(page.locator("#end")).to_have_value("2026-10-08")
+            expect(page.locator("#bbox")).to_have_value("-123,37,-121,39")
+            assert page.evaluate("previewMap.getBounds().contains([[37,-123],[39,-121]]) && previewMap.getCenter().lng < -121")
+            selected_view = page.evaluate("[previewMap.getCenter().lat,previewMap.getCenter().lng,previewMap.getZoom()]")
+            page.locator("#collection").select_option("EARLY")
+            expect(page.locator("#status")).to_contain_text("no usable spatial extent")
+            expect(page.locator("#bbox")).to_have_value("-123,37,-121,39")
+            assert page.evaluate("[previewMap.getCenter().lat,previewMap.getCenter().lng,previewMap.getZoom()]") == selected_view
             page.locator("#collection").select_option("")
             expect(page.locator("#start")).to_have_value("1985-02-03")
+            expect(page.locator("#bbox")).to_have_value("-123,37,-121,39")
+            assert page.evaluate("[previewMap.getCenter().lat,previewMap.getCenter().lng,previewMap.getZoom()]") == selected_view
             page.locator("#collection").select_option("TEST")
             expect(page.locator("#start")).to_have_value("2020-01-01")
             page.locator("#start").fill("")
             page.locator("#end").fill("")
             page.locator("#use-map").click()
+            assert page.locator("#bbox").input_value() != "29.123456789,-2,35.987654321,5"
+            assert page.evaluate("""() => {
+              const [w,s,e,n]=document.querySelector('#bbox').value.split(',').map(Number);
+              return w<=29.123456789 && s<=-2 && e>=35.987654321 && n>=5;
+            }""")
             expect(page.locator("#start")).to_have_value("")
             expect(page.locator("#end")).to_have_value("")
             page.locator("#bbox").fill("29,-2,35,5")
@@ -207,6 +242,30 @@ def main():
                 expect(page.locator("#status")).to_contain_text("Static catalog connected")
                 expect(page.locator("#start")).to_have_value(expected)
                 expect(page.locator("#end")).to_have_value("2026-10-08")
+            page.locator("#endpoint").fill("https://fixture.test/crossing-collection.json")
+            page.locator("#connect").click()
+            expect(page.locator("#collection")).to_be_enabled()
+            page.locator("#collection").select_option("CROSSING")
+            expect(page.locator("#bbox")).to_have_value("170,-10,-170,10")
+            expect(page.locator("#status")).to_contain_text("crosses the antimeridian")
+            assert page.evaluate("Math.abs(previewMap.getCenter().lng-180)<0.1 && previewMap.getBounds().contains([[-10,170],[10,190]])")
+            page.locator("#endpoint").fill("https://fixture.test/point-collection.json")
+            page.locator("#connect").click()
+            expect(page.locator("#collection")).to_be_enabled()
+            page.locator("#collection").select_option("POINT")
+            expect(page.locator("#bbox")).to_have_value("30,0,30,0")
+            expect(page.locator("#status")).to_contain_text("point or line")
+            assert page.evaluate("Math.abs(previewMap.getCenter().lng-30)<0.001 && Math.abs(previewMap.getCenter().lat)<0.001 && previewMap.getZoom()===12")
+            page.locator("#use-map").click()
+            assert page.locator("#bbox").input_value() != "30,0,30,0"
+            page.locator("#endpoint").fill("https://fixture.test/spatial-static.json")
+            page.locator("#connect").click()
+            expect(page.locator("#collection")).to_be_enabled()
+            page.locator("#collection").select_option("STATIC")
+            expect(page.locator("#bbox")).to_have_value("-123,37,-121,39")
+            expect(page.locator("#search")).to_be_disabled()
+            expect(page.locator("#status")).to_contain_text("remote search is unavailable")
+            expect(page.locator("#status")).not_to_contain_text("Select Search")
             page.locator("#endpoint").fill("https://fixture.test/delayed")
             page.locator("#connect").click()
             expect(page.locator("#start")).to_be_disabled()

@@ -10,7 +10,9 @@ Static catalogs can be explored through `child` and `item` links. The explorer e
 
 ## Define a search
 
-Pan and zoom to your area, then select **Use map extent**. Bounding boxes use WGS84 longitude and latitude in **west, south, east, north** order. Manual edits are allowed. Split an area that crosses the antimeridian into two searches. Optional dates form an inclusive day interval; a blank endpoint is open-ended.
+Selecting a collection zooms the map to its advertised coverage and fills the search bounding box with that exact extent. The map includes some padding for visibility; the search box retains the collection's coordinates. **All collections** keeps your current area. If a collection has no usable extent, the current area is kept and a status message explains how to set it manually.
+
+To refine the area, pan and zoom, then select **Use map extent**. Bounding boxes use WGS84 longitude and latitude in **west, south, east, north** order. Manual edits are allowed. A collection crossing the antimeridian is centered across the date line; split its bounding box into two searches on either side of ±180°. Point or line extents are centered on the map; enlarge their area with **Use map extent** before searching. Optional dates form an inclusive day interval; a blank endpoint is open-ended. Selecting a collection does not automatically request search results.
 
 **From** starts at the selected collection's earliest advertised temporal date, or **January 1, 2000** when no start is available. **Until** starts at today's date in your browser's local time zone. Connecting to a catalog or changing collections resets these defaults; both fields remain editable and can be cleared after loading. For **All collections**, From uses the earliest start once the complete collection list is loaded. If any relevant start is missing, invalid, or open-ended, more collections remain to load, or the list reaches its 1,000-collection limit, From uses January 1, 2000. Loading more collections preserves dates you edited.
 

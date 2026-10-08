@@ -1,4 +1,4 @@
-import {STACClient, PRESETS, safeURL, viewportBBox, localToday, earliestCollectionDate} from './stac.js';
+import {STACClient, PRESETS, safeURL, viewportBBox, localToday, earliestCollectionDate, collectionBBox} from './stac.js';
 const $ = id => document.getElementById(id);
 const client = new STACClient();
 const map = L.map('map', {worldCopyJump: true}).setView([-2, 32], 5);
@@ -44,7 +44,22 @@ function dateDefaults(reset = true) {
   if (reset || !startEdited) $('start').value = earliestCollectionDate(collections);
   if (reset) { $('end').value = localToday(); startEdited = false; }
 }
-$('collection').onchange = () => dateDefaults();
+$('collection').onchange = () => {
+  dateDefaults();
+  const collection = client.collections.find(c => c.id === $('collection').value);
+  if (!collection) { status('All collections selected. Current map and search area kept.'); return; }
+  const bbox = collectionBBox(collection);
+  if (!bbox) { status('This collection has no usable spatial extent. Current map and bounding box kept; set an area manually.', true); return; }
+  const [west, south, east, north] = bbox;
+  const crossing = east < west;
+  const flat = west === east || south === north;
+  map.fitBounds([[south, west], [north, crossing ? east + 360 : east]], {padding: [20, 20], maxZoom: 12, animate: false});
+  $('bbox').value = bbox.join(',');
+  if (!client.searchLink) status('Collection extent applied. Browse child or item links above; remote search is unavailable.');
+  else if (crossing) status('Collection extent crosses the antimeridian. Split it into two searches on either side of ±180°.', true);
+  else if (flat) status('Collection extent is a point or line. Enlarge the area and select Use map extent before searching.', true);
+  else status('Collection extent applied. Select Search this area to load items.');
+};
 $('start').oninput = () => { startEdited = true; };
 async function connect(url) {
   connected = false; client.reset(); renderResults(); collectionOptions(); dateDefaults(); controls();

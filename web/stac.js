@@ -23,6 +23,18 @@ export function bboxValue(values) {
   return bbox;
 }
 
+export function collectionBBox(collection) {
+  // STAC's first bbox covers the entire collection; later boxes describe clusters.
+  const boxes = collection?.extent?.spatial?.bbox;
+  const extent = Array.isArray(boxes) ? boxes[0] : null;
+  if (!Array.isArray(extent) || ![4, 6].includes(extent.length) || !extent.every(Number.isFinite)) return null;
+  const dimensions = extent.length / 2;
+  if (dimensions === 3 && extent[2] > extent[5]) return null;
+  const [west, south, east, north] = [extent[0], extent[1], extent[dimensions], extent[dimensions + 1]];
+  if (west < -180 || west > 180 || east < -180 || east > 180 || south < -90 || north > 90 || south > north) return null;
+  return [west, south, east, north];
+}
+
 export function viewportBBox(west, south, east, north) {
   const width = east - west;
   south = Math.max(-90, south); north = Math.min(90, north);
