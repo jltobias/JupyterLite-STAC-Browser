@@ -49,6 +49,9 @@ def main():
             browser = p.chromium.launch(headless=True, **({"executable_path": str(chrome)} if chrome.exists() else {}))
             context = browser.new_context(viewport={"width": 1440, "height": 1080})
             searches = []
+            search_requests = []
+            context.on('request', lambda request: search_requests.append(request.url)
+                       if urlsplit(request.url).path.rstrip('/').endswith('/search') else None)
             if args.fixtures:
                 catalog = json.loads((ROOT / "tests/fixtures/catalog.json").read_text(encoding="utf-8"))
                 items = copy.deepcopy(json.loads((ROOT / "tests/fixtures/items.json").read_text(encoding="utf-8")))
@@ -191,6 +194,12 @@ print('Spatial replay passed: bbox, polygon, none')
                     frame.locator('#spatial-mode').select_option('none')
                     frame.locator('#search').click()
                     expect(frame.locator('#search')).to_be_enabled()
+                    expect(frame.locator('#edit-area')).to_have_attribute('aria-pressed', 'false')
+                    count_before_resume = len(search_requests)
+                    frame.locator('#spatial-mode').select_option('bbox')
+                    expect(frame.locator('#edit-area')).to_have_attribute('aria-pressed', 'true')
+                    expect(frame.locator('#map .marker-icon-middle')).to_have_count(5)
+                    assert len(search_requests) == count_before_resume, 'Resuming iframe editing must not search'
                     print("Embedded map displayed " + ("synthetic fixture results" if args.fixtures else "live WorldPop results"), flush=True)
                 page.screenshot(path=str(results / (notebook.replace(".ipynb", "") + ".png")))
                 print(f"PASS {notebook}: {expected}", flush=True)

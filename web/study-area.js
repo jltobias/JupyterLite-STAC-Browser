@@ -17,8 +17,16 @@ export class StudyArea {
       try { this.setRectangle(bboxValue(this.input.value)); this.announce('Study rectangle updated.'); }
       catch (error) { this.input.setAttribute('aria-invalid', 'true'); this.status(error.message + ' Previous map area retained.', true); }
     });
+    const resumeBoundingBox = () => {
+      if (this.mode.value === 'bbox' && !this.editing && !this.drawing && !this.locked) this.setEditing(true);
+    };
+    // Native selects omit change when the current option is chosen again.
+    this.mode.addEventListener('click', resumeBoundingBox);
+    this.mode.addEventListener('keyup', event => {
+      if (event.key === 'Enter' || event.key === ' ') resumeBoundingBox();
+    });
     this.mode.addEventListener('change', () => {
-      this.updateControls();
+      resumeBoundingBox(); this.updateControls();
       this.announce(this.mode.value === 'none' ? 'No study-area spatial filter: collection and dates still apply.' : this.mode.value === 'polygon' ? 'Exact polygon filtering selected. Providers must support intersects; errors never fall back to bbox.' : 'Bounding-box filtering selected.');
     });
     this.controls['use-map'].onclick = () => this.attempt(() => {

@@ -56,7 +56,28 @@ def check_study_area(page, calls):
         saved = exported()
         assert saved['query']['bbox'] == saved['study_area']['bbox'] == expected_bbox
         assert saved['study_area']['geometry'] == visible
+        expect(page.locator('#edit-area')).to_have_attribute('aria-pressed', 'false')
+        expect(page.locator('#map .marker-icon')).to_have_count(0)
         page.locator('#edit-area').click()
+        expect(page.locator('#map .marker-icon')).to_have_count(4)
+        page.locator('#edit-area').click()
+        # Native re-selection does not dispatch change; exercise real picker events.
+        page.locator('#spatial-mode').click()
+        page.keyboard.press('Enter')
+        expect(page.locator('#spatial-mode')).to_have_value('bbox')
+        expect(page.locator('#map .marker-icon')).to_have_count(4)
+        page.locator('#edit-area').click()
+        page.locator('#spatial-mode').focus()
+        page.keyboard.press('Space')
+        page.keyboard.press('Enter')
+        expect(page.locator('#map .marker-icon')).to_have_count(4)
+        page.locator('#edit-area').click()
+        page.locator('#spatial-mode').select_option('none')
+        page.locator('#spatial-mode').select_option('bbox')
+        expect(page.locator('#edit-area')).to_have_attribute('aria-pressed', 'true')
+        expect(page.locator('#map .marker-icon')).to_have_count(4)
+        assert geometry() == visible and request_count() == before + 1
+        assert exported() == saved, 'Resuming editing must retain the completed search export'
         return before + 1
 
     before = request_count()
@@ -178,6 +199,20 @@ def check_study_area(page, calls):
     for mode in ['polygon', 'bbox', 'none']:
         page.locator('#spatial-mode').select_option(mode)
         assert request_count() == before
+        if mode == 'bbox':
+            expect(page.locator('#edit-area')).to_have_attribute('aria-pressed', 'true')
+            expect(page.locator('#map .marker-icon-middle')).to_have_count(5)
+            assert geometry() == valid, 'Choosing bbox must preserve the polygon vertices'
+            assert exported() == saved
+            move(page.locator('#map .study-area'), 12, 8)
+            assert geometry() != valid, 'Choosing bbox must restore polygon dragging'
+            moved = geometry()
+            move(page.locator('#map .marker-icon:not(.marker-icon-middle)').first, -8, 7)
+            assert geometry() != moved, 'Choosing bbox must restore polygon vertex resizing'
+            valid = geometry()
+            assert list(map(float, page.locator('#bbox').input_value().split(','))) == bounds(valid)
+            assert request_count() == before and exported() == saved
+            assert page.evaluate("Object.values(previewMap._layers).find(l=>l.options?.className==='collection-coverage').toGeoJSON()") == coverage
         page.locator('#search').click()
         expect(page.locator('.result-card')).to_have_count(2)
         expect(page.locator('#search')).to_be_enabled()
