@@ -11,6 +11,7 @@ from urllib.parse import parse_qs, urlsplit
 from playwright.sync_api import sync_playwright, expect
 from study_area_check import check_study_area
 from directory_check import check_directory, check_deafrica
+from download_check import check_downloads
 
 ROOT = Path(__file__).resolve().parents[1]
 CATALOG = json.loads((ROOT / "tests/fixtures/catalog.json").read_text(encoding="utf-8"))
@@ -360,11 +361,11 @@ def main():
             expect(page.locator("#metadata")).to_contain_text("synthetic-sentinel-2")
             expect(page.locator("#metadata dl")).to_contain_text("proprietary")
             expect(page.locator("#metadata dl")).to_contain_text("Copernicus fixture provider")
-            red = page.locator("#metadata").get_by_role("link", name="Red band (HTTPS)", exact=True)
+            red = page.locator("#metadata").get_by_role("link", name="Download Red band (HTTPS)", exact=True)
             expect(red).to_have_attribute("href", "https://fixture.test/download/red.jp2")
             expect(red.locator("..")).to_contain_text("Provider authentication required")
-            expect(page.locator("#metadata").get_by_role("link", name="Product", exact=True).locator("..")).to_contain_text("Provider authentication required")
-            expect(page.locator("#metadata")).to_contain_text("S3 only (S3; use a compatible client)")
+            expect(page.locator("#metadata").get_by_role("link", name="Download Product", exact=True).locator("..")).to_contain_text("Provider authentication required")
+            expect(page.locator("#metadata").get_by_role("textbox", name="S3 only asset address", exact=True)).to_have_value("s3://fixture-eodata/only.jp2")
             assert page.locator("#metadata a[href^='javascript:'], #metadata a[href^='s3:']").count() == 0
             assert page.locator("#metadata a").count() == 2
             with page.expect_download() as download_info:
@@ -373,6 +374,7 @@ def main():
             assert exported["features"][0]["assets"] == COPERNICUS_ITEM["assets"]
             check_deafrica(page, calls)
             check_directory(page, calls, pending_connections, CATALOG)
+            check_downloads(page, CATALOG, ITEMS)
             page.set_viewport_size({"width": 390, "height": 844})
             assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
             output = ROOT / "test-results"

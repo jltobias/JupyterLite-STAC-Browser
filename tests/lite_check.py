@@ -15,6 +15,7 @@ from threading import Thread
 from urllib.parse import urlsplit, parse_qs
 
 from playwright.sync_api import sync_playwright, expect
+from download_check import ATTACHMENT
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -57,6 +58,7 @@ def main():
                 items = copy.deepcopy(json.loads((ROOT / "tests/fixtures/items.json").read_text(encoding="utf-8")))
                 items["features"] = [items["features"][0]]
                 items["features"][0]["collection"] = "UGA"
+                items["features"][0]["assets"]["data"]["href"] = "https://download-fixture.test/population.tif"
                 items["links"] = []
 
                 def fixture(route):
@@ -82,6 +84,12 @@ def main():
                 context.route("https://earth-search.aws.element84.com/**", fixture)
                 context.route("https://tile.openstreetmap.org/**", lambda route: route.abort())
                 context.route("https://fonts.googleapis.com/**", lambda route: route.abort())
+                asset_requests = []
+                def attachment(route):
+                    asset_requests.append(route.request.url)
+                    route.fulfill(body=ATTACHMENT, content_type='application/octet-stream',
+                                  headers={'Content-Disposition': 'attachment; filename="population.tif"'})
+                context.route('https://download-fixture.test/**', attachment)
             page = context.new_page()
             page.set_default_timeout(120000)
             notebooks = [
@@ -204,6 +212,21 @@ print('Spatial replay passed: bbox, polygon, none')
                     expect(frame.locator('#map .marker-icon')).to_have_count(4)
                     expect(frame.locator('#bbox')).to_have_value(bbox_before_resume)
                     assert len(search_requests) == count_before_resume, 'Resuming iframe editing must not search'
+                    frame.locator('.result-card').first.click()
+                    expect(frame.get_by_role('heading', name='Download dataset', exact=True)).to_be_visible()
+                    expect(frame.locator('.asset-download').first).to_be_visible()
+                    with page.expect_download() as item_download:
+                        frame.get_by_role('button', name='Download item metadata (.json)', exact=True).click()
+                    selected_item = json.loads(Path(item_download.value.path()).read_text(encoding='utf-8'))
+                    assert selected_item['type'] == 'Feature' and selected_item['assets']
+                    if args.fixtures:
+                        assert not asset_requests, 'Selecting iframe results must not fetch assets'
+                        with page.expect_download() as asset_download:
+                            frame.locator('.asset-download').first.click()
+                        assert asset_download.value.suggested_filename == 'population.tif'
+                        assert Path(asset_download.value.path()).read_bytes() == ATTACHMENT
+                        assert asset_requests == ['https://download-fixture.test/population.tif']
+                    assert len(search_requests) == count_before_resume
                     print("Embedded map displayed " + ("synthetic fixture results" if args.fixtures else "live WorldPop results"), flush=True)
                 page.screenshot(path=str(results / (notebook.replace(".ipynb", "") + ".png")))
                 print(f"PASS {notebook}: {expected}", flush=True)

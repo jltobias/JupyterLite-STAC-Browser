@@ -145,15 +145,79 @@ function renderResults() {
   }
 }
 function addLink(parent, text, href, base) {
-  try { const a = el('a', text); a.href = safeURL(href, base); a.target = '_blank'; a.rel = 'noopener noreferrer'; parent.append(a); }
+  try { const a = el('a', text); a.href = safeURL(href, base); a.target = '_blank'; a.rel = 'noopener noreferrer'; parent.append(a); return a; }
   catch { parent.append(el('span', `${text} (unsafe link omitted)`)); }
+}
+function datasetDownloads(item) {
+  const section = el('section', null, 'dataset-downloads');
+  section.setAttribute('aria-labelledby', 'download-heading');
+  const heading = el('h3', 'Download dataset'); heading.id = 'download-heading';
+  section.append(heading);
+  const assets = el('ul', null, 'download-assets'), base = client.baseFor(item);
+  let fileLinks = 0, restrictedFileLinks = 0, restrictedAssets = false;
+  const collection = client.collections.find(c => c.id === item.collection);
+  const entries = Object.entries(item.assets || {}).filter(([, asset]) => asset && typeof asset === 'object' && typeof asset.href === 'string');
+  // Put explicitly advertised data before previews and other supporting assets.
+  const hasDataRole = asset => Array.isArray(asset.roles) && asset.roles.includes('data');
+  entries.sort(([, a], [, b]) => Number(hasDataRole(b)) - Number(hasDataRole(a)));
+  for (const [key, asset] of entries) {
+    const li = el('li'), roles = Array.isArray(asset.roles) ? asset.roles.filter(r => typeof r === 'string') : [];
+    const supporting = !roles.includes('data') && roles.some(r => ['thumbnail', 'overview', 'metadata'].includes(r));
+    let href = asset.href, label = asset.title || key, access = asset;
+    try { if (!href.trim()) throw new Error('Empty asset URL'); href = safeURL(href, base); }
+    catch {
+      const alternatives = asset.alternate && typeof asset.alternate === 'object' ? asset.alternate : {};
+      for (const alternative of [alternatives.https, ...Object.values(alternatives)]) {
+        if (typeof alternative?.href !== 'string' || !alternative.href.trim()) continue;
+        try { href = safeURL(alternative.href, base, true); label += ' (HTTPS)'; access = alternative; break; }
+        catch { /* Unsupported or unsafe URLs stay non-clickable. */ }
+      }
+    }
+    li.append(el('strong', label));
+    li.append(el('small', `${asset.type || 'type unspecified'}${roles.length ? ' · ' + roles.join(', ') : ''}`));
+    const auth = Array.isArray(access['auth:refs']) && access['auth:refs'].length > 0;
+    if (auth) {
+      restrictedAssets = true;
+      li.append(el('small', 'Provider authentication required'));
+      for (const ref of access['auth:refs']) {
+        if (typeof ref !== 'string') continue;
+        const scheme = item.properties?.['auth:schemes']?.[ref] || collection?.['auth:schemes']?.[ref];
+        if (typeof scheme?.description === 'string') li.append(el('small', scheme.description));
+      }
+    }
+    if (/^s3:/i.test(href)) {
+      li.append(el('small', 'S3; use a compatible client with the asset address below.'));
+      const address = el('input'); address.type = 'text'; address.readOnly = true; address.value = href;
+      address.setAttribute('aria-label', `${label} asset address`);
+      address.addEventListener('focus', () => address.select()); li.append(address);
+    } else {
+      const actionLabel = String(label).replace(/^download\s*[-:–—]\s*/i, '');
+      const link = href.trim() ? addLink(li, `${supporting ? 'Open' : 'Download'} ${actionLabel}`, href, base) : null;
+      if (!href.trim()) li.append(el('small', 'No asset address supplied.'));
+      if (link) {
+        link.className = supporting ? 'asset-supporting' : 'asset-download';
+        if (!supporting) { link.setAttribute('download', ''); fileLinks++; if (auth) restrictedFileLinks++; }
+      }
+    }
+    assets.append(li);
+  }
+  section.append(el('p', fileLinks
+    ? `${fileLinks === restrictedFileLinks ? 'These data links require provider authentication.' : 'Choose a file below.'} Files open at the provider; if displayed, use your browser’s Save option. Downloads contain the full asset, not a study-area clip.`
+    : 'No browser-downloadable data file is advertised. Check the asset instructions and Source links below for provider access.', 'download-help'));
+  if (restrictedAssets) section.append(el('p', 'This browser does not sign in or sign URLs. Follow the provider’s access instructions; item metadata can still be saved below.', 'download-help'));
+  if (assets.children.length) section.append(assets);
+  else section.append(el('p', 'No assets supplied.'));
+  const metadata = el('button', 'Download item metadata (.json)', 'metadata-download'); metadata.type = 'button';
+  metadata.onclick = () => download('stac-item.json', item);
+  section.append(metadata, el('p', 'Original STAC metadata only; dataset files are separate.', 'hint'));
+  return section;
 }
 function select(item, button) {
   footprints.eachLayer(layer => layer.setStyle({color: '#386a4e', weight: 1.7, fillOpacity: 0}));
   const layer = itemLayers.get(item);
   if (layer) { layer.setStyle({color: '#b56c28', weight: 3, fillOpacity: .12}); layer.bringToFront(); if (layer.getBounds().isValid()) map.fitBounds(layer.getBounds(), {maxZoom: 9, padding: [20, 20]}); }
   document.querySelectorAll('.result-card').forEach(n => n.classList.remove('selected')); button?.classList.add('selected');
-  const panel = $('metadata'); panel.replaceChildren(el('h3', item.properties?.title || item.id));
+  const panel = $('metadata'); panel.replaceChildren(el('h3', item.properties?.title || item.id), datasetDownloads(item));
   const props = item.properties || {};
   panel.append(el('p', props.description || 'No item description supplied.'));
   const collection = client.collections.find(c => c.id === item.collection);
@@ -161,28 +225,7 @@ function select(item, button) {
   const providers = providerNames(props.providers) || providerNames(collection?.providers) || 'Not supplied — consult provider';
   const dl = el('dl');
   for (const [key, value] of Object.entries({ID: item.id, Collection: item.collection || 'Not specified', Date: props.datetime || `${props.start_datetime || 'Unknown'} / ${props.end_datetime || 'Unknown'}`, 'Reference year': props.year ?? 'Not specified', Project: props.project || 'Not specified', License: props.license || collection?.license || 'Not supplied — consult provider', Providers: providers})) { dl.append(el('dt', key), el('dd', String(value))); }
-  panel.append(dl, el('h3', 'Assets'));
-  const assets = el('ul');
-  for (const [key, asset] of Object.entries(item.assets || {})) {
-    if (!asset || typeof asset !== 'object' || typeof asset.href !== 'string') continue;
-    const li = el('li'), base = client.baseFor(item);
-    let href = asset.href, label = asset.title || key, access = asset;
-    try { safeURL(href, base); }
-    catch {
-      const alternative = asset.alternate?.https;
-      if (typeof alternative?.href === 'string') {
-        try { href = safeURL(alternative.href, base, true); label += ' (HTTPS)'; access = alternative; }
-        catch { /* Keep unsupported or unsafe URLs non-clickable. */ }
-      }
-    }
-    if (/^s3:/i.test(href)) li.append(el('span', `${label} (S3; use a compatible client)`));
-    else addLink(li, label, href, base);
-    li.append(el('small', ` · ${asset.type || 'type unspecified'}`));
-    if (Array.isArray(access['auth:refs']) && access['auth:refs'].length) li.append(el('small', ' · Provider authentication required'));
-    assets.append(li);
-  }
-  panel.append(assets);
-  if (!assets.children.length) panel.append(el('p', 'No assets supplied.'));
+  panel.append(dl);
   panel.append(el('h3', 'Source links'));
   const sourceLinks = el('ul');
   for (const link of Array.isArray(item.links) ? item.links : []) {
