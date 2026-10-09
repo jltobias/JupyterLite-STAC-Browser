@@ -195,20 +195,49 @@ def check_study_area(page, calls):
     page.locator('#zoom-area').click()
     page.locator('#start').fill('2020-01-01')
     page.locator('#end').fill('2020-01-02')
+    # Opening/canceling the native picker must not discard polygon vertices.
+    page.locator('label[for="spatial-mode"]').click()
+    assert geometry() == valid
+    page.keyboard.press('Escape')
+    page.locator('#spatial-mode').click()
+    page.locator('#spatial-mode').click()
+    assert geometry() == valid, 'Clicking the control again dismisses rather than confirms'
+    page.keyboard.press('Escape')
+    # Some browsers parse :open but never match it on a native select.
+    page.locator('#spatial-mode').evaluate("el => { const matches = el.matches; el.matches = function(s) { return s === ':open' ? false : matches.call(this, s); }; }")
+    page.locator('#spatial-mode').click()
+    assert geometry() == valid, 'Opening must be safe without functional :open support'
+    page.keyboard.press('Escape')
+    page.locator('#spatial-mode').evaluate('el => { delete el.matches; }')
+    page.locator('#spatial-mode').click()
+    assert geometry() == valid
+    page.keyboard.press('Escape')
+    assert geometry() == valid
+    page.locator('#spatial-mode').focus()
+    page.keyboard.press('Space')
+    assert geometry() == valid
+    page.keyboard.press('ArrowDown')
+    page.keyboard.press('Enter')
+    expect(page.locator('#spatial-mode')).to_have_value('polygon')
+    assert geometry() == valid and request_count() == before
     # Each mode sends exactly one matching spatial filter, preserving other filters.
     for mode in ['polygon', 'bbox', 'none']:
         page.locator('#spatial-mode').select_option(mode)
         assert request_count() == before
         if mode == 'bbox':
             expect(page.locator('#edit-area')).to_have_attribute('aria-pressed', 'true')
-            expect(page.locator('#map .marker-icon-middle')).to_have_count(5)
-            assert geometry() == valid, 'Choosing bbox must preserve the polygon vertices'
+            expect(page.locator('#area-summary')).to_contain_text('Rectangle')
+            expect(page.locator('#map .marker-icon-middle')).to_have_count(0)
+            expect(page.locator('#map .marker-icon')).to_have_count(4)
+            assert bounds(geometry()) == bounds(valid), 'Choosing bbox must preserve the polygon envelope'
+            assert len(geometry()['coordinates'][0]) == 5
             assert exported() == saved
+            rectangle = geometry()
             move(page.locator('#map .study-area'), 12, 8)
-            assert geometry() != valid, 'Choosing bbox must restore polygon dragging'
+            assert geometry() != rectangle, 'Choosing bbox must restore rectangle dragging'
             moved = geometry()
-            move(page.locator('#map .marker-icon:not(.marker-icon-middle)').first, -8, 7)
-            assert geometry() != moved, 'Choosing bbox must restore polygon vertex resizing'
+            move(page.locator('#map .marker-icon').first, -8, 7)
+            assert geometry() != moved, 'Choosing bbox must restore rectangle resizing'
             valid = geometry()
             assert list(map(float, page.locator('#bbox').input_value().split(','))) == bounds(valid)
             assert request_count() == before and exported() == saved
@@ -231,6 +260,22 @@ def check_study_area(page, calls):
         assert saved['study_area']['bbox'] == bounds(valid)
         if mode == 'bbox':
             assert saved['query']['bbox'] == bounds(valid)
+    # Re-selecting bbox also restores a rectangle after local polygon editing.
+    page.locator('#spatial-mode').select_option('bbox')
+    page.locator('#polygon-area').click()
+    page.locator('#map .marker-icon-middle').first.click()
+    expect(page.locator('#map .marker-icon-middle')).to_have_count(5)
+    envelope = bounds(geometry())
+    polygon = geometry()
+    page.locator('#spatial-mode').click()
+    assert geometry() == polygon
+    page.keyboard.press('Enter')
+    expect(page.locator('#area-summary')).to_contain_text('Rectangle')
+    expect(page.locator('#map .marker-icon-middle')).to_have_count(0)
+    expect(page.locator('#map .marker-icon')).to_have_count(4)
+    assert bounds(geometry()) == envelope and request_count() == before
+    assert exported() == saved
+    page.locator('#edit-area').click()
     # Result footprints remain selectable and never get editor handles.
     assert page.evaluate("Object.values(previewMap._layers).filter(l=>l.options?.className==='result-footprint').every(l=>!l.pm)")
     page.locator('#map .result-footprint').first.click()

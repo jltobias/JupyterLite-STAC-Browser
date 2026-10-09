@@ -18,13 +18,20 @@ export class StudyArea {
       catch (error) { this.input.setAttribute('aria-invalid', 'true'); this.status(error.message + ' Previous map area retained.', true); }
     });
     const resumeBoundingBox = () => {
-      if (this.mode.value === 'bbox' && !this.editing && !this.drawing && !this.locked) this.setEditing(true);
+      if (this.mode.value !== 'bbox' || this.drawing || this.locked) return;
+      if (this.shape !== 'rectangle') this.setRectangle(geometryBBox(this.geometry));
+      if (!this.editing) this.setEditing(true);
     };
-    // Native selects omit change when the current option is chosen again.
-    this.mode.addEventListener('click', resumeBoundingBox);
-    this.mode.addEventListener('keyup', event => {
-      if (event.key === 'Enter' || event.key === ' ') resumeBoundingBox();
-    });
+    // Native selects omit change on re-selection. Opening the picker must not
+    // replace a polygon before the user chooses Exact polygon or cancels.
+    const confirmSelection = event => {
+      if (event.type === 'click' && event.detail !== 0) return;
+      if (event.type === 'keyup' && event.key !== 'Enter' && event.key !== ' ') return;
+      if (CSS.supports('selector(:open)') ? this.mode.matches(':open') : event.type !== 'click' || event.detail !== 0) return;
+      resumeBoundingBox();
+    };
+    this.mode.addEventListener('click', confirmSelection);
+    this.mode.addEventListener('keyup', confirmSelection);
     this.mode.addEventListener('change', () => {
       resumeBoundingBox(); this.updateControls();
       this.announce(this.mode.value === 'none' ? 'No study-area spatial filter: collection and dates still apply.' : this.mode.value === 'polygon' ? 'Exact polygon filtering selected. Providers must support intersects; errors never fall back to bbox.' : 'Bounding-box filtering selected.');
