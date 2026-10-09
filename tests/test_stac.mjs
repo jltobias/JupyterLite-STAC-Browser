@@ -287,3 +287,53 @@ test('static item acquisition sets a stable timestamp and portable export', asyn
   assert.equal(client.provenance().retrieved_at, retrieved);
   assert.equal(client.geojson().features[0].assets.data.href, 'https://fixture.test/items/data.tif');
 });
+
+
+// Both implementations consume these same normalization fixtures.
+import {normalizeCatalogs, normalizeSnapshot, filterCatalogs, endpointProblem, refreshDirectory, DIRECTORY_API} from '../web/catalog-directory.js';
+const directoryCases = JSON.parse(readFileSync(new URL('./fixtures/catalog-directory.json', import.meta.url)));
+test('directory normalization preserves advertised records and excludes protected listings', () => {
+  for (const c of directoryCases.normalization) {
+    if (c.ids) {
+      const rows = normalizeCatalogs(c.input);
+      assert.deepEqual(rows.map(row => row.id), c.ids, c.name);
+      for (const row of rows) {
+        assert.equal(row.url, c.input.find(original => original.id === row.id).url);
+        assert.deepEqual(Object.keys(row), ['id', 'slug', 'title', 'url', 'access', 'isApi']);
+      }
+      for (const filter of c.filters || []) assert.deepEqual(filterCatalogs(rows, filter.term).map(row => row.id), filter.ids);
+    } else assert.throws(() => normalizeCatalogs(c.input), undefined, c.name);
+  }
+  for (const c of directoryCases.endpoints) assert.equal(!endpointProblem(c.url), c.supported, c.url);
+  const snapshot = JSON.parse(readFileSync(new URL('../web/public-catalogs.json', import.meta.url)));
+  assert.deepEqual(normalizeSnapshot(snapshot), snapshot);
+  assert.throws(() => normalizeSnapshot({...snapshot, api: 'https://unsafe.test'}));
+  assert.throws(() => normalizeSnapshot({...snapshot, fetched_at: 'invalid'}));
+});
+test('live directory refresh validates and omits credentials', async () => {
+  const refreshed = await refreshDirectory(async (url, options) => {
+    assert.equal(url, DIRECTORY_API);
+    assert.equal(options.credentials, 'omit');
+    return {ok: true, json: async () => directoryCases.normalization[0].input};
+  });
+  assert.deepEqual(refreshed.catalogs.map(c => c.id), [3, 2, 1]);
+  await assert.rejects(refreshDirectory(async () => ({ok: false, status: 503})), /HTTP 503/);
+  await assert.rejects(refreshDirectory(async () => ({ok: true, json: async () => {throw Error('html');}})), /non-JSON/);
+  await assert.rejects(refreshDirectory(async () => ({ok: true, json: async () => [{access: 'public'}]})), /Invalid public/);
+});
+
+test('Digital Earth Africa uses the documented endpoint and explicit bounded search', async () => {
+  const endpoint = 'https://explorer.digitalearth.africa/stac/';
+  assert.equal(PRESETS.deafrica[1], endpoint);
+  const calls = [];
+  const client = new STACClient(fetcher(url => {
+    calls.push(url.href);
+    if (url.pathname === '/stac/') return root;
+    if (url.pathname === '/stac/collections') return {collections: [{id: 's2_l2a'}], links: []};
+    return page([]);
+  }));
+  await client.connect(endpoint);
+  await client.search({collection: 's2_l2a', bbox: [45, -20.1, 47, -19.8], start: '2020-01-01', end: '2020-01-31', limit: 3});
+  assert.equal(calls[0], endpoint);
+  assert.deepEqual(Object.fromEntries(new URL(calls.at(-1)).searchParams), {collections: 's2_l2a', bbox: '45,-20.1,47,-19.8', limit: '3', datetime: '2020-01-01T00:00:00Z/2020-01-31T23:59:59.999999Z'});
+});

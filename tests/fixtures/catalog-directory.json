@@ -1,0 +1,322 @@
+{
+  "normalization": [
+    {
+      "name": "public only sorted safe text and exact URLs",
+      "input": [
+        {
+          "id": 1,
+          "slug": "zulu",
+          "title": "Zulu API",
+          "url": "https://fixture.test/?advertised=keep",
+          "access": "public",
+          "isApi": true,
+          "summary": "extra field removed"
+        },
+        {
+          "id": 2,
+          "slug": "alpha",
+          "title": "Alpha static",
+          "url": "https://fixture.test/static.json",
+          "access": "public",
+          "isApi": false,
+          "summary": "extra field removed"
+        },
+        {
+          "id": 3,
+          "slug": "<script>",
+          "title": "<img src=x onerror=alert(1)>",
+          "url": "javascript:alert(1)",
+          "access": "public",
+          "isApi": true,
+          "summary": "extra field removed"
+        },
+        {
+          "id": 4,
+          "slug": "zulu",
+          "title": "Zulu API",
+          "url": "https://fixture.test/?advertised=keep",
+          "access": "private",
+          "isApi": true,
+          "summary": "extra field removed"
+        },
+        {
+          "id": 5,
+          "slug": "zulu",
+          "title": "Zulu API",
+          "url": "https://fixture.test/?advertised=keep",
+          "access": "protected",
+          "isApi": true,
+          "summary": "extra field removed"
+        }
+      ],
+      "ids": [
+        3,
+        2,
+        1
+      ],
+      "filters": [
+        {
+          "term": "ADVERTISED",
+          "ids": [
+            1
+          ]
+        },
+        {
+          "term": " ALPHA ",
+          "ids": [
+            2
+          ]
+        },
+        {
+          "term": "no matching listing",
+          "ids": []
+        }
+      ]
+    },
+    {
+      "name": "not array",
+      "input": {}
+    },
+    {
+      "name": "empty",
+      "input": []
+    },
+    {
+      "name": "null row",
+      "input": [
+        null
+      ]
+    },
+    {
+      "name": "missing access",
+      "input": [
+        {}
+      ]
+    },
+    {
+      "name": "empty URL",
+      "input": [
+        {
+          "id": 1,
+          "slug": "zulu",
+          "title": "Zulu API",
+          "url": "",
+          "access": "public",
+          "isApi": true,
+          "summary": "extra field removed"
+        }
+      ]
+    },
+    {
+      "name": "numeric URL",
+      "input": [
+        {
+          "id": 1,
+          "slug": "zulu",
+          "title": "Zulu API",
+          "url": 7,
+          "access": "public",
+          "isApi": true,
+          "summary": "extra field removed"
+        }
+      ]
+    },
+    {
+      "name": "missing title",
+      "input": [
+        {
+          "id": 1,
+          "slug": "zulu",
+          "url": "https://fixture.test/?advertised=keep",
+          "access": "public",
+          "isApi": true,
+          "summary": "extra field removed"
+        }
+      ]
+    },
+    {
+      "name": "boolean id",
+      "input": [
+        {
+          "id": true,
+          "slug": "zulu",
+          "title": "Zulu API",
+          "url": "https://fixture.test/?advertised=keep",
+          "access": "public",
+          "isApi": true,
+          "summary": "extra field removed"
+        }
+      ]
+    },
+    {
+      "name": "unsafe integer",
+      "input": [
+        {
+          "id": 9007199254740992,
+          "slug": "zulu",
+          "title": "Zulu API",
+          "url": "https://fixture.test/?advertised=keep",
+          "access": "public",
+          "isApi": true,
+          "summary": "extra field removed"
+        }
+      ]
+    },
+    {
+      "name": "nonboolean type",
+      "input": [
+        {
+          "id": 1,
+          "slug": "zulu",
+          "title": "Zulu API",
+          "url": "https://fixture.test/?advertised=keep",
+          "access": "public",
+          "isApi": "true",
+          "summary": "extra field removed"
+        }
+      ]
+    },
+    {
+      "name": "duplicate",
+      "input": [
+        {
+          "id": 1,
+          "slug": "zulu",
+          "title": "Zulu API",
+          "url": "https://fixture.test/?advertised=keep",
+          "access": "public",
+          "isApi": true,
+          "summary": "extra field removed"
+        },
+        {
+          "id": 1,
+          "slug": "zulu",
+          "title": "Zulu API",
+          "url": "https://fixture.test/?advertised=keep",
+          "access": "public",
+          "isApi": true,
+          "summary": "extra field removed"
+        }
+      ]
+    },
+    {
+      "name": "no public",
+      "input": [
+        {
+          "id": 1,
+          "slug": "zulu",
+          "title": "Zulu API",
+          "url": "https://fixture.test/?advertised=keep",
+          "access": "private",
+          "isApi": true,
+          "summary": "extra field removed"
+        }
+      ]
+    },
+    {
+      "name": "lone surrogate slug",
+      "input": [
+        {
+          "id": 1,
+          "slug": "bad\ud800slug",
+          "title": "Zulu API",
+          "url": "https://fixture.test/?advertised=keep",
+          "access": "public",
+          "isApi": true,
+          "summary": "extra field removed"
+        }
+      ]
+    },
+    {
+      "name": "remove all Unicode marks for alphabetical sorting",
+      "input": [
+        {
+          "id": 10,
+          "slug": "zulu",
+          "title": "az",
+          "url": "https://fixture.test/?advertised=keep",
+          "access": "public",
+          "isApi": true,
+          "summary": "extra field removed"
+        },
+        {
+          "id": 11,
+          "slug": "zulu",
+          "title": "a\u034fb",
+          "url": "https://fixture.test/?advertised=keep",
+          "access": "public",
+          "isApi": true,
+          "summary": "extra field removed"
+        }
+      ],
+      "ids": [
+        11,
+        10
+      ],
+      "filters": [
+        {
+          "term": "a\u034fb",
+          "ids": [
+            11
+          ]
+        },
+        {
+          "term": "az",
+          "ids": [
+            10
+          ]
+        }
+      ]
+    }
+  ],
+  "endpoints": [
+    {
+      "url": "https://fixture.test/?advertised=keep",
+      "supported": true
+    },
+    {
+      "url": "http://fixture.test/catalog.json",
+      "supported": false
+    },
+    {
+      "url": "fixture.test/catalog.json",
+      "supported": false
+    },
+    {
+      "url": "//fixture.test/catalog.json",
+      "supported": false
+    },
+    {
+      "url": "javascript:alert(1)",
+      "supported": false
+    },
+    {
+      "url": "https://user:secret@fixture.test",
+      "supported": false
+    },
+    {
+      "url": "https://fixture.test/\\other",
+      "supported": false
+    },
+    {
+      "url": "https://fixture.test/\n",
+      "supported": false
+    },
+    {
+      "url": "https:fixture.test",
+      "supported": false
+    },
+    {
+      "url": "https:///example.test/catalog.json",
+      "supported": false
+    },
+    {
+      "url": "https://example.test:/catalog.json",
+      "supported": false
+    },
+    {
+      "url": "https://[::1]:443/catalog.json",
+      "supported": true
+    }
+  ]
+}

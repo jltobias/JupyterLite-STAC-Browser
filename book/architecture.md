@@ -12,6 +12,14 @@ Requests are bounded: 20-second network timeouts, 1–100 items per search page,
 
 Study geometry and spatial mode are captured when a request starts and committed with a successful response. Later UI edits and failed searches keep the previous results, query, requests, and study snapshot together. Notebook 03 replays bbox, exact-polygon, unrestricted, and static-item exports. Geoman 2.20.0 is pinned and served locally under the same deployment subpath, including inside the JupyterLite iframe.
 
+## Public catalog directory
+
+`web/catalog-directory.js` validates, filters and sorts STAC Index listings without probing providers. Its canonical snapshot, `web/public-catalogs.json`, records the official source, API and retrieval date, and retains only id, slug, title, advertised URL, access and API/static type. Only `access == public` records are included. Directory metadata is rendered as text. HTTP, missing-scheme, credential-bearing and unsafe endpoints remain inspectable with an upstream listing link but cannot initiate a connection.
+
+The explicit live refresh uses the existing credential-free browser fetch helper and 20-second timeout. Invalid, non-JSON, unreachable or timed-out responses preserve the previous directory and connection. Filtering and refreshing retain the selected endpoint, even if it disappears from the current results. Relevant controls pause while a provider connection or directory refresh is pending. The directory never crawls providers or fetches every catalog's collections; Connect enters the existing API/static STAC workflow.
+
+Run `python scripts/update_catalog_directory.py` to refresh the bundled file from the official API. The updater caps responses at 4 MiB and 5,000 listings, validates public records, strips unused fields, and replaces the snapshot atomically only on success. Builds copy the canonical file into both Explorer and Lite's browser filesystem, without a live refresh. Relative module/snapshot URLs support source preview, repository subpaths, and the Lite iframe. Notebook 03 filters this same snapshot locally. The canonical `web/public-catalogs.json` records the source and retrieval date; the chooser and notebook display those values and the public listing count. The public directory is supplied by [STAC Index](https://stacindex.org/catalogs?access=public) through its [official API](https://stacindex.org/api/catalogs).
+
 ## Common failures
 
 | Symptom | What to do |

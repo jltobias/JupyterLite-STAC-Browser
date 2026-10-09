@@ -10,6 +10,7 @@ import threading
 from urllib.parse import parse_qs, urlsplit
 from playwright.sync_api import sync_playwright, expect
 from study_area_check import check_study_area
+from directory_check import check_directory, check_deafrica
 
 ROOT = Path(__file__).resolve().parents[1]
 CATALOG = json.loads((ROOT / "tests/fixtures/catalog.json").read_text(encoding="utf-8"))
@@ -332,7 +333,7 @@ def main():
             assert protocol
             check_study_area(page, calls)
             # Switching from WorldPop to the second preset uses the real provider URL shape.
-            assert page.locator("#preset option").evaluate_all("els => els.map(e=>e.value)") == ["worldpop", "copernicus", "earthsearch", "planetary", "custom"]
+            assert page.locator("#preset option").evaluate_all("els => els.map(e=>e.value)") == ["worldpop", "copernicus", "deafrica", "earthsearch", "planetary", "directory", "custom"]
             page.locator("#preset").select_option("copernicus")
             expect(page.locator("#endpoint")).to_have_value(copernicus)
             page.locator("#connect").click()
@@ -370,6 +371,8 @@ def main():
                 page.locator("#export-geojson").click()
             exported = json.loads(Path(download_info.value.path()).read_text())
             assert exported["features"][0]["assets"] == COPERNICUS_ITEM["assets"]
+            check_deafrica(page, calls)
+            check_directory(page, calls, pending_connections, CATALOG)
             page.set_viewport_size({"width": 390, "height": 844})
             assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
             output = ROOT / "test-results"

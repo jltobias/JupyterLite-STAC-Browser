@@ -29,3 +29,9 @@ These projects inform the workflow; their source code is not copied into this re
 - [Playwright](https://playwright.dev/python/) — Apache-2.0; used for development verification.
 
 The splash SVG and interface artwork are original work created for this repository. Project code, notebooks, prose and original artwork use the MIT license. See the repository’s `THIRD_PARTY_NOTICES.md`, `LICENSE`, and `CITATION.cff` for credit and citation metadata.
+
+
+Public catalog discovery is credited to [STAC Index](https://stacindex.org/catalogs?access=public), using its [official catalog API](https://stacindex.org/api/catalogs). The canonical `web/public-catalogs.json` records the bundled source and retrieval date; the chooser and notebook display those values and the public listing count. Only listing identifiers, titles, advertised URLs, access and API/static type are retained, alongside source and retrieval metadata. Summaries and provider datasets are not bundled. Individual listings link back to STAC Index. Public metadata access does not guarantee browser compatibility or unrestricted asset use; consult each provider's terms. Update explicitly with `python scripts/update_catalog_directory.py`; builds use the bundled snapshot.
+
+
+Digital Earth Africa is an additional featured metadata provider. See its [documentation](https://docs.digitalearthafrica.org/en/latest/index.html), [direct access guide](https://docs.digitalearthafrica.org/en/latest/platform_tools/direct_access.html), and [STAC tutorial](https://docs.digitalearthafrica.org/en/latest/sandbox/notebooks/Frequently_used_code/Downloading_data_with_STAC.html). Provider availability and asset licensing remain independent of this software.

@@ -3,6 +3,7 @@ import {polygonValue} from './geometry.js';
 export const PRESETS = {
   worldpop: ['WorldPop', 'https://api.stac.worldpop.org'],
   copernicus: ['Copernicus Data Space', 'https://stac.dataspace.copernicus.eu/v1'],
+  deafrica: ['Digital Earth Africa', 'https://explorer.digitalearth.africa/stac/'],
   earthsearch: ['Earth Search', 'https://earth-search.aws.element84.com/v1'],
   planetary: ['Planetary Computer', 'https://planetarycomputer.microsoft.com/api/stac/v1'],
 };

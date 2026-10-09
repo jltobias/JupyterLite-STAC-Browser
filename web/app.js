@@ -1,5 +1,6 @@
 import {STACClient, PRESETS, safeURL, localToday, earliestCollectionDate} from './stac.js';
 import {StudyArea} from './study-area.js';
+import {createDirectoryChooser, endpointProblem} from './catalog-directory.js';
 const $ = id => document.getElementById(id);
 const client = new STACClient();
 L.PM.setOptIn(true);
@@ -10,6 +11,10 @@ const footprints = L.featureGroup().addTo(map);
 let itemLayers = new WeakMap();
 let busy = false, connected = false;
 let startEdited = false;
+const directory = createDirectoryChooser(selectionChanged => {
+  if (selectionChanged && $('preset').value === 'directory') $('endpoint').value = directory.selection?.url || '';
+  controls();
+});
 function queryChanged() {
   if (client.query) $('result-context').textContent = 'Search settings changed. Displayed results and exports still describe the completed search. Select Search to refresh them.';
 }
@@ -19,7 +24,11 @@ function status(text, error = false) { $('status').textContent = text; $('status
 function controls() {
   study.setBusy(busy);
   $('start').disabled = $('end').disabled = $('limit').disabled = busy;
-  $('connect').disabled = busy;
+  const fromDirectory = $('preset').value === 'directory';
+  directory.setBusy(busy);
+  $('preset').disabled = $('endpoint').disabled = busy;
+  $('endpoint').readOnly = fromDirectory;
+  $('connect').disabled = busy || directory.pending || (fromDirectory && (!directory.selection || Boolean(endpointProblem(directory.selection.url))));
   $('more').disabled = busy || !connected || !client.next;
   $('more-collections').disabled = busy || !connected || !client.collectionNext;
   $('collection').disabled = busy || !connected;
@@ -67,7 +76,13 @@ async function connect(url) {
   $('catalog-summary').textContent = 'Connecting…';
   try { await client.connect(url); }
   catch (error) { $('catalog-summary').textContent = 'Connection unavailable. Check the URL or try another catalog.'; throw error; }
-  connected = true; $('endpoint').value = client.url; collectionOptions(); dateDefaults();
+  connected = true;
+  // Keep an advertised directory URL verbatim, even when its provider redirects.
+  if ($('preset').value !== 'directory' || directory.selection?.url !== url) {
+    $('endpoint').value = client.url;
+    if ($('preset').value === 'directory') { $('preset').value = 'custom'; $('directory-panel').hidden = true; }
+  }
+  collectionOptions(); dateDefaults();
   $('catalog-summary').textContent = `${client.root.title || client.root.id} · ${client.collections.length} collections loaded${client.searchLink ? '' : ' · Static catalog: remote Item Search is not advertised.'}`;
   for (const link of client.catalogLinks()) {
     const button = el('button', `${link.rel} · ${link.title || link.href}`);
@@ -80,8 +95,19 @@ async function connect(url) {
   }
   status(client.searchLink ? 'Connected. Choose a collection or search all collections in this area.' : 'Static catalog connected. Browse child or item links above; remote search is unavailable.');
 }
-$('preset').onchange = () => { const preset = PRESETS[$('preset').value]; if (preset) $('endpoint').value = preset[1]; else { $('endpoint').value = ''; $('endpoint').focus(); } };
-$('connect-form').onsubmit = event => { event.preventDefault(); run(() => connect($('endpoint').value)); };
+$('preset').onchange = () => {
+  const preset = PRESETS[$('preset').value], fromDirectory = $('preset').value === 'directory';
+  $('directory-panel').hidden = !fromDirectory;
+  if (preset) $('endpoint').value = preset[1];
+  else if (fromDirectory) $('endpoint').value = directory.selection?.url || '';
+  else { $('endpoint').value = ''; $('endpoint').focus(); }
+  controls();
+};
+$('connect-form').onsubmit = event => {
+  event.preventDefault();
+  if ($('connect').disabled) return;
+  run(() => connect($('endpoint').value));
+};
 $('search-form').onsubmit = event => {
   event.preventDefault();
   if (busy) return;
@@ -176,3 +202,4 @@ function download(name, value) {
 $('export-geojson').onclick = () => download('stac-items.geojson', client.geojson());
 $('export-query').onclick = () => download('stac-search.json', client.provenance());
 run(() => connect(PRESETS.worldpop[1]));
+directory.load();

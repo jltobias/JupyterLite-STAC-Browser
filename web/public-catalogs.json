@@ -1,0 +1,1015 @@
+{
+  "source": "https://stacindex.org/catalogs?access=public",
+  "api": "https://stacindex.org/api/catalogs",
+  "fetched_at": "2026-10-09T17:57:18Z",
+  "catalogs": [
+    {
+      "id": 189,
+      "slug": "aerialdataset",
+      "title": "AerialDataset",
+      "url": "https://aerialdataset.com/stac",
+      "access": "public",
+      "isApi": false
+    },
+    {
+      "id": 114,
+      "slug": "africa-agriculture-adaptation-atlas",
+      "title": "African Agriculture Adaptation Atlas STAC catalog",
+      "url": "https://digital-atlas.s3.amazonaws.com/stac/public_stac/catalog.json",
+      "access": "public",
+      "isApi": false
+    },
+    {
+      "id": 160,
+      "slug": "agroforestry-tree-detection-india-stac-layer",
+      "title": "Agroforestry Tree Detection — India (STAC layer)",
+      "url": "https://data.source.coop/planet/agroforestry-individual-tree-detection-india/stac/catalog.json",
+      "access": "public",
+      "isApi": false
+    },
+    {
+      "id": 179,
+      "slug": "argentina-ational-geographic-institute",
+      "title": "Argentina National Geographic Institute (IGN) Reference Layers",
+      "url": "https://data.source.coop/nlebovits/ign-argentina/catalog.json",
+      "access": "public",
+      "isApi": false
+    },
+    {
+      "id": 16,
+      "slug": "astraea-earth-ondemand",
+      "title": "Astraea Earth OnDemand",
+      "url": "https://eod-catalog-svc-prod.astraea.earth/",
+      "access": "public",
+      "isApi": true
+    },
+    {
+      "id": 161,
+      "slug": "boettiger-lab-geospatial-datasets",
+      "title": "Boettiger Lab Geospatial Datasets",
+      "url": "https://s3-west.nrp-nautilus.io/public-data/stac/catalog.json",
+      "access": "public",
+      "isApi": true
+    },
+    {
+      "id": 112,
+      "slug": "bon-in-a-box-stac",
+      "title": "BON in a Box STAC",
+      "url": "https://stac.geobon.org/",
+      "access": "public",
+      "isApi": true
+    },
+    {
+      "id": 27,
+      "slug": "forest-observatory",
+      "title": "California Forest Observatory",
+      "url": "https://storage.googleapis.com/cfo-public/catalog.json",
+      "access": "public",
+      "isApi": false
+    },
+    {
+      "id": 139,
+      "slug": "canadian-geospatial-data-collections-datacube",
+      "title": "Canadian Geospatial Data Collections",
+      "url": "https://datacube.services.geo.ca/stac/api/",
+      "access": "public",
+      "isApi": true
+    },
+    {
+      "id": 55,
+      "slug": "capella-space-open-data",
+      "title": "Capella Space Open Data",
+      "url": "https://capella-open-data.s3.us-west-2.amazonaws.com/stac/catalog.json",
+      "access": "public",
+      "isApi": false
+    },
+    {
+      "id": 83,
+      "slug": "cassini-vims-ir",
+      "title": "Cassini VIMS-IR STAC catalog",
+      "url": "https://vims.univ-nantes.fr/stac/catalog.json",
+      "access": "public",
+      "isApi": false
+    },
+    {
+      "id": 8,
+      "slug": "cbers",
+      "title": "CBERS and Amazonia-1 on AWS",
+      "url": "https://stac.scitekno.com.br/v100/",
+      "access": "public",
+      "isApi": true
+    },
+    {
+      "id": 144,
+      "slug": "ciesin-stac",
+      "title": "CIESIN STAC",
+      "url": "https://ciesin.github.io/sci-apps-stac/stac/catalog.json",
+      "access": "public",
+      "isApi": false
+    },
+    {
+      "id": 108,
+      "slug": "coclico",
+      "title": "CoCliCo STAC Catalog",
+      "url": "https://coclico.blob.core.windows.net/stac/v1/catalog.json",
+      "access": "public",
+      "isApi": false
+    },
+    {
+      "id": 113,
+      "slug": "cdse",
+      "title": "Copernicus Data Space Ecosystem",
+      "url": "https://stac.dataspace.copernicus.eu/v1/",
+      "access": "public",
+      "isApi": true
+    },
+    {
+      "id": 151,
+      "slug": "core-stack-spatio-temporal-asset-catalog",
+      "title": "CoRE Stack Spatio Temporal Asset Catalog",
+      "url": "https://spatio-temporal-asset-catalog.s3.ap-south-1.amazonaws.com/CorestackCatalogs_merged_collection/catalog.json",
+      "access": "public",
+      "isApi": false
+    },
+    {
+      "id": 91,
+      "slug": "cubes-and-clouds-snow-cover",
+      "title": "Cubes and Clouds - Snow Cover",
+      "url": "https://esa.pages.eox.at/cubes-and-clouds-catalog/MOOC_Cubes_and_clouds/catalog.json",
+      "access": "public",
+      "isApi": false
+    },
+    {
+      "id": 115,
+      "slug": "cyverse-stac-api",
+      "title": "Cyverse STAC API",
+      "url": "https://stac.cyverse.org/",
+      "access": "public",
+      "isApi": true
+    },
+    {
+      "id": 30,
+      "slug": "datageoadminch",
+      "title": "data.geo.admin.ch",
+      "url": "https://data.geo.admin.ch/api/stac/v1/",
+      "access": "public",
+      "isApi": true
+    },
+    {
+      "id": 136,
+      "slug": "dedl-api",
+      "title": "Destination Earth Data Lake (DEDL) API",
+      "url": "https://hda.data.destination-earth.eu/stac/v2",
+      "access": "public",
+      "isApi": true
+    },
+    {
+      "id": 37,
+      "slug": "digital-earth-africa",
+      "title": "Digital Earth Africa",
+      "url": "https://explorer.digitalearth.africa/stac/",
+      "access": "public",
+      "isApi": true
+    },
+    {
+      "id": 36,
+      "slug": "digital-earth-au",
+      "title": "Digital Earth Australia",
+      "url": "https://explorer.sandbox.dea.ga.gov.au/stac/",
+      "access": "public",
+      "isApi": true
+    },
+    {
+      "id": 35,
+      "slug": "digitale-orthophotos-niedersachsen",
+      "title": "Digitale Orthophotos Niedersachsen",
+      "url": "https://dop.stac.lgln.niedersachsen.de",
+      "access": "public",
+      "isApi": true
+    },
+    {
+      "id": 169,
+      "slug": "disaster-data-releases-from-planet-labs-pbc",
+      "title": "Disaster Data Releases from Planet Labs PBC",
+      "url": "https://data.source.coop/planet/disasterdata/catalog.json",
+      "access": "public",
+      "isApi": false
+    },
+    {
+      "id": 157,
+      "slug": "dre-atlas",
+      "title": "Distributed Renewable Energy (DRE) Atlas",
+      "url": "https://data.source.coop/vida/dre-atlas/collection.json",
+      "access": "public",
+      "isApi": false
+    },
+    {
+      "id": 95,
+      "slug": "earth-genome",
+      "title": "Earth Genome: Sentinel-2 L2A Temporal Mosaics",
+      "url": "https://stac.earthgenome.org/",
+      "access": "public",
+      "isApi": true
+    },
+    {
+      "id": 2,
+      "slug": "earth-search",
+      "title": "Earth Search",
+      "url": "https://earth-search.aws.element84.com/v1/",
+      "access": "public",
+      "isApi": true
+    },
+    {
+      "id": 145,
+      "slug": "easierdata",
+      "title": "EasierData",
+      "url": "https://stac.easierdata.info",
+      "access": "public",
+      "isApi": true
+    },
+    {
+      "id": 88,
+      "slug": "eco-datacube",
+      "title": "EcoDataCube.eu",
+      "url": "https://s3.eu-central-1.wasabisys.com/stac/odse/catalog.json",
+      "access": "public",
+      "isApi": false
+    },
+    {
+      "id": 76,
+      "slug": "eoc-eo-products-service",
+      "title": "EOC EO Products Service",
+      "url": "https://geoservice.dlr.de/eoc/ogc/stac/v1/",
+      "access": "public",
+      "isApi": true
+    },
+    {
+      "id": 57,
+      "slug": "ers-open-data",
+      "title": "ERS open data",
+      "url": "https://s3.gptl.ru/stac-web-free/catalog.json",
+      "access": "public",
+      "isApi": true
+    },
+    {
+      "id": 89,
+      "slug": "esa-catalog",
+      "title": "ESA Catalog",
+      "url": "https://eocat.esa.int/eo-catalogue/",
+      "access": "public",
+      "isApi": true
+    },
+    {
+      "id": 181,
+      "slug": "eurosat-dataset-for-land-use-and-land-cover",
+      "title": "EuroSAT: Dataset for Land Use and Land Cover Classification",
+      "url": "https://data.source.coop/nlebovits/eurosat-ms/catalog.json",
+      "access": "public",
+      "isApi": false
+    },
+    {
+      "id": 178,
+      "slug": "extremadura-sdi-cictex",
+      "title": "Extremadura SDI (CICTEX)",
+      "url": "https://storage.googleapis.com/carto-portolan-ide-extremadura/catalog.json",
+      "access": "public",
+      "isApi": false
+    },
+    {
+      "id": 58,
+      "slug": "fairicube-hub-catalog",
+      "title": "FAIRiCUBE Hub Catalog",
+      "url": "https://stacapi.eoxhub.fairicube.eu/",
+      "access": "public",
+      "isApi": true
+    },
+    {
+      "id": 15,
+      "slug": "fedeo-clearinghouse",
+      "title": "FedEO Clearinghouse",
+      "url": "https://fedeo.ceos.org/",
+      "access": "public",
+      "isApi": true
+    },
+    {
+      "id": 94,
+      "slug": "fiboa",
+      "title": "fiboa Field Boundaries",
+      "url": "https://fiboa.org/stac/catalog.json",
+      "access": "public",
+      "isApi": false
+    },
+    {
+      "id": 42,
+      "slug": "fmi-ard-finland",
+      "title": "FMI ARD Finland",
+      "url": "https://pta.data.lit.fmi.fi/stac/root.json",
+      "access": "public",
+      "isApi": false
+    },
+    {
+      "id": 149,
+      "slug": "geoportal-des-kantons-bern",
+      "title": "Geoportal des Kantons Bern",
+      "url": "https://geofiles.be.ch/geoportal/pub/stac/de/catalog.json",
+      "access": "public",
+      "isApi": false
+    },
+    {
+      "id": 77,
+      "slug": "gep-supersites-csk-and-csg-data",
+      "title": "GEP Supersites CSK and CSG data",
+      "url": "https://gep-supersites-stac.terradue.com/",
+      "access": "public",
+      "isApi": true
+    },
+    {
+      "id": 171,
+      "slug": "ghsl-population-grids-ghs-pop-r2023a",
+      "title": "GHSL Population Grids (GHS-POP R2023A)",
+      "url": "https://data.source.coop/nlebovits/ghsl/catalog.json",
+      "access": "public",
+      "isApi": false
+    },
+    {
+      "id": 79,
+      "slug": "gistda-drought-index-in-thailand",
+      "title": "GISTDA Drought Index in Thailand",
+      "url": "https://disaster-vallaris.gistda.or.th/core/api/stac/1.0/Drought/?api_key=ErNGa8yrMWef0YutwmL7XvpwWQNCK2kVPNt5dAwWbBMnvDoifTEhD75H3DCENjKJ",
+      "access": "public",
+      "isApi": true
+    },
+    {
+      "id": 80,
+      "slug": "gistda-flood-disaster-in-thailand",
+      "title": "GISTDA Flood disaster in Thailand",
+      "url": "https://disaster-vallaris.gistda.or.th/core/api/stac/1.0/Flood/?api_key=ErNGa8yrMWef0YutwmL7XvpwWQNCK2kVPNt5dAwWbBMnvDoifTEhD75H3DCENjKJ",
+      "access": "public",
+      "isApi": true
+    },
+    {
+      "id": 21,
+      "slug": "google-earth-engine",
+      "title": "Google Earth Engine",
+      "url": "https://storage.googleapis.com/earthengine-stac/catalog/catalog.json",
+      "access": "public",
+      "isApi": false
+    },
+    {
+      "id": 6,
+      "slug": "google-earth-engine-openeo",
+      "title": "Google Earth Engine (openEO)",
+      "url": "https://earthengine.openeo.org/v1.0/",
+      "access": "public",
+      "isApi": true
+    },
+    {
+      "id": 183,
+      "slug": "hdx-hapi-cloud-native",
+      "title": "HDX HAPI Cloud-Native",
+      "url": "https://data.source.coop/hdx/hapi/collection.json",
+      "access": "public",
+      "isApi": false
+    },
+    {
+      "id": 109,
+      "slug": "hong-kong-csdi-trial",
+      "title": "Hong Kong CSDI Trial",
+      "url": "https://raw.githubusercontent.com/Anna-leungtn/STAC_CSDI/refs/heads/main/ib1000_stac/catalog.json",
+      "access": "public",
+      "isApi": false
+    },
+    {
+      "id": 134,
+      "slug": "hub-oceans-ocean-data-platform-catalog",
+      "title": "HUB Ocean´s Ocean Data Platform Catalog",
+      "url": "https://api.hubocean.earth/api/stac",
+      "access": "public",
+      "isApi": true
+    },
+    {
+      "id": 53,
+      "slug": "ide-facultad-de-ciencia-y-tecnologia-uader",
+      "title": "IDE Facultad de Ciencia y Tecnología UADER",
+      "url": "https://rawcdn.githack.com/IDE-FCyT/IDE-FCyT/main/docs/catalog/stac_catalog.json",
+      "access": "public",
+      "isApi": false
+    },
+    {
+      "id": 185,
+      "slug": "impact-observatory-stac-api",
+      "title": "Impact Observatory STAC API",
+      "url": "https://api.impactobservatory.com/stac-aws/",
+      "access": "public",
+      "isApi": true
+    },
+    {
+      "id": 147,
+      "slug": "inpe-stac-server",
+      "title": "INPE STAC Server",
+      "url": "https://data.inpe.br/bdc/stac/v1/",
+      "access": "public",
+      "isApi": true
+    },
+    {
+      "id": 174,
+      "slug": "jrc-glofas-global-flood-hazard-maps",
+      "title": "JRC GloFAS Global Flood Hazard Maps",
+      "url": "https://data.source.coop/nlebovits/jrc-glofas/catalog.json",
+      "access": "public",
+      "isApi": false
+    },
+    {
+      "id": 106,
+      "slug": "kagis-katalog",
+      "title": "KAGIS Katalog",
+      "url": "https://gis.ktn.gv.at/api/stac/v1/",
+      "access": "public",
+      "isApi": true
+    },
+    {
+      "id": 132,
+      "slug": "kentucky-from-above-spatiotemporal-asset-catalog",
+      "title": "Kentucky From Above SpatioTemporal Asset Catalog",
+      "url": "https://spved5ihrl.execute-api.us-west-2.amazonaws.com/",
+      "access": "public",
+      "isApi": true
+    },
+    {
+      "id": 170,
+      "slug": "lucas-ml",
+      "title": "LUCAS ML",
+      "url": "https://data.source.coop/jrc-lucas/jrc-lucas-ml/stac/catalog.json",
+      "access": "public",
+      "isApi": false
+    },
+    {
+      "id": 167,
+      "slug": "mapbiomas-annual-land-cover-and-land-use",
+      "title": "MapBiomas Annual Land Cover and Land Use, South America",
+      "url": "https://data.source.coop/tristangruppwri/mapbiomas/catalog.json",
+      "access": "public",
+      "isApi": false
+    },
+    {
+      "id": 50,
+      "slug": "maxar-ard-sample-data",
+      "title": "Maxar ARD Sample Data",
+      "url": "https://ard.maxar.com/samples/catalog.json",
+      "access": "public",
+      "isApi": false
+    },
+    {
+      "id": 56,
+      "slug": "maxar-open-data-catalog-ard-format",
+      "title": "Maxar Open Data Catalog (ARD format)",
+      "url": "https://maxar-opendata.s3.amazonaws.com/events/catalog.json",
+      "access": "public",
+      "isApi": false
+    },
+    {
+      "id": 182,
+      "slug": "microsoft-ml-road-detections",
+      "title": "Microsoft ML Road Detections",
+      "url": "https://data.source.coop/nlebovits/microsoft-ml-road-detections/catalog.json",
+      "access": "public",
+      "isApi": false
+    },
+    {
+      "id": 32,
+      "slug": "microsoft-pc",
+      "title": "Microsoft Planetary Computer STAC API",
+      "url": "https://planetarycomputer.microsoft.com/api/stac/v1/",
+      "access": "public",
+      "isApi": true
+    },
+    {
+      "id": 158,
+      "slug": "mideafind-germany-diy-store-locations",
+      "title": "MideaFind Germany DIY Store Locations",
+      "url": "https://mideafind.com/data/stac/catalog.json",
+      "access": "public",
+      "isApi": false
+    },
+    {
+      "id": 138,
+      "slug": "misteo-stac-server",
+      "title": "MISTEO STAC SERVER",
+      "url": "https://stac-server.dev2prod.co/",
+      "access": "public",
+      "isApi": true
+    },
+    {
+      "id": 52,
+      "slug": "catalonia-monthly-sentinel2",
+      "title": "Monthly Mosaic of Sentinel 2 Images for Catalonia",
+      "url": "https://datacloud.icgc.cat/stac-catalog/catalog.json",
+      "access": "public",
+      "isApi": false
+    },
+    {
+      "id": 29,
+      "slug": "msc-geomet",
+      "title": "MSC GeoMet - GeoMet-OGC-API",
+      "url": "https://api.weather.gc.ca/stac/?f=json",
+      "access": "public",
+      "isApi": false
+    },
+    {
+      "id": 135,
+      "slug": "mtd-stac-api",
+      "title": "MTD STAC API",
+      "url": "https://api.stac.teledetection.fr",
+      "access": "public",
+      "isApi": true
+    },
+    {
+      "id": 164,
+      "slug": "naip-aerial-imagery-mosaics",
+      "title": "NAIP Aerial Imagery Mosaics",
+      "url": "https://data.source.coop/portolan/portolan-pipeline/naip-mosaic/PRs/111/catalog.json",
+      "access": "public",
+      "isApi": false
+    },
+    {
+      "id": 48,
+      "slug": "nasa-cmr-cloudstac-proxy",
+      "title": "NASA CMR CLOUDSTAC Proxy",
+      "url": "https://cmr.earthdata.nasa.gov/cloudstac/",
+      "access": "public",
+      "isApi": true
+    },
+    {
+      "id": 7,
+      "slug": "cmr-stac",
+      "title": "NASA CMR STAC",
+      "url": "https://cmr.earthdata.nasa.gov/stac/",
+      "access": "public",
+      "isApi": true
+    },
+    {
+      "id": 14,
+      "slug": "nasa-iserv",
+      "title": "NASA ISERV",
+      "url": "https://nasa-iserv.s3-us-west-2.amazonaws.com/catalog/catalog.json",
+      "access": "public",
+      "isApi": false
+    },
+    {
+      "id": 163,
+      "slug": "moldova-geodata",
+      "title": "National geospatial data of the Republic of Moldova",
+      "url": "data.source.coop/nlebovits/moldova-geodata/catalog.json",
+      "access": "public",
+      "isApi": false
+    },
+    {
+      "id": 122,
+      "slug": "nz-coastal",
+      "title": "New Zealand Coastal Elevation",
+      "url": "https://nz-coastal.s3.ap-southeast-2.amazonaws.com/catalog.json",
+      "access": "public",
+      "isApi": false
+    },
+    {
+      "id": 92,
+      "slug": "nz-elevation",
+      "title": "New Zealand Elevation",
+      "url": "https://nz-elevation.s3.ap-southeast-2.amazonaws.com/catalog.json",
+      "access": "public",
+      "isApi": false
+    },
+    {
+      "id": 82,
+      "slug": "nz-imagery",
+      "title": "New Zealand Imagery",
+      "url": "https://nz-imagery.s3.ap-southeast-2.amazonaws.com/catalog.json",
+      "access": "public",
+      "isApi": false
+    },
+    {
+      "id": 159,
+      "slug": "noaa-climate-data-records",
+      "title": "NOAA Climate Data Records",
+      "url": "https://noaadata.apps.nsidc.org/NOAA/G02202_V6/stac/catalog.json",
+      "access": "public",
+      "isApi": false
+    },
+    {
+      "id": 66,
+      "slug": "osc",
+      "title": "Open Science Catalog",
+      "url": "https://esa-earthcode.github.io/open-science-catalog-metadata/catalog.json",
+      "access": "public",
+      "isApi": false
+    },
+    {
+      "id": 155,
+      "slug": "openaerialmap",
+      "title": "OpenAerialMap",
+      "url": "https://api.imagery.hotosm.org/stac",
+      "access": "public",
+      "isApi": true
+    },
+    {
+      "id": 20,
+      "slug": "openaerialmap-example",
+      "title": "OpenAerialMap Example",
+      "url": "https://raw.githubusercontent.com/m-mohr/oam-example/main/catalog.json",
+      "access": "public",
+      "isApi": false
+    },
+    {
+      "id": 87,
+      "slug": "openlandmap",
+      "title": "OpenLandMap STAC",
+      "url": "https://s3.eu-central-1.wasabisys.com/stac/openlandmap/catalog.json",
+      "access": "public",
+      "isApi": false
+    },
+    {
+      "id": 25,
+      "slug": "opentopography",
+      "title": "OpenTopography Raster DEM Data Catalog",
+      "url": "https://portal.opentopography.org/stac/raster_catalog.json",
+      "access": "public",
+      "isApi": false
+    },
+    {
+      "id": 141,
+      "slug": "overture",
+      "title": "Overture Releases",
+      "url": "https://stac.overturemaps.org/catalog.json",
+      "access": "public",
+      "isApi": false
+    },
+    {
+      "id": 72,
+      "slug": "paituli-stac-finland",
+      "title": "Paituli STAC (Finland)",
+      "url": "https://paituli.csc.fi/geoserver/ogc/stac/v1",
+      "access": "public",
+      "isApi": true
+    },
+    {
+      "id": 17,
+      "slug": "pangeo",
+      "title": "Pangeo Cloud Data Catalog",
+      "url": "https://raw.githubusercontent.com/pangeo-data/pangeo-datastore-stac/master/master/catalog.json",
+      "access": "public",
+      "isApi": false
+    },
+    {
+      "id": 143,
+      "slug": "panoramax",
+      "title": "Panoramax",
+      "url": "https://api.panoramax.xyz/api/",
+      "access": "public",
+      "isApi": true
+    },
+    {
+      "id": 176,
+      "slug": "pergamino-sdi-spatial-data-infrastructure",
+      "title": "Pergamino SDI: Spatial Data Infrastructure",
+      "url": "https://data.source.coop/nlebovits/pergamino-ide/catalog.json",
+      "access": "public",
+      "isApi": false
+    },
+    {
+      "id": 184,
+      "slug": "pgc-data-catalog",
+      "title": "PGC Data Catalog",
+      "url": "https://stac.pgc.umn.edu/api/v1/",
+      "access": "public",
+      "isApi": true
+    },
+    {
+      "id": 186,
+      "slug": "philadelphia-housing-and-land-use",
+      "title": "Philadelphia Housing and Land Use",
+      "url": "https://data.source.coop/nlebovits/phl-housing-demo/catalog.json",
+      "access": "public",
+      "isApi": false
+    },
+    {
+      "id": 44,
+      "slug": "planet-labs-stac-catalog",
+      "title": "Planet Labs STAC Catalog",
+      "url": "https://www.planet.com/data/stac/catalog.json",
+      "access": "public",
+      "isApi": false
+    },
+    {
+      "id": 61,
+      "slug": "polar-geospatial-center",
+      "title": "Polar Geospatial Center Data Catalog",
+      "url": "https://pgc-opendata-dems.s3.us-west-2.amazonaws.com/pgc-data-stac.json",
+      "access": "public",
+      "isApi": false
+    },
+    {
+      "id": 180,
+      "slug": "portolan-nl-cloud-native-dutch-geodata",
+      "title": "Portolan NL — Cloud-Native Dutch Geodata",
+      "url": "https://data.source.coop/cholmes/portolan-nl/catalog.json",
+      "access": "public",
+      "isApi": false
+    },
+    {
+      "id": 165,
+      "slug": "portolan-reference-catalog",
+      "title": "Portolan Reference Catalog",
+      "url": "https://data.source.coop/portolan/portolan-pipeline/portolan-reference/main/catalog.json",
+      "access": "public",
+      "isApi": false
+    },
+    {
+      "id": 190,
+      "slug": "oie-stac-catalog",
+      "title": "PSL / Mines Paris / OIE | STAC Catalog | Renewable energy datasets ",
+      "url": "https://stac.webservice-energy.org/api/",
+      "access": "public",
+      "isApi": true
+    },
+    {
+      "id": 74,
+      "slug": "rapidai4eo-v1",
+      "title": "RapidAI4EO",
+      "url": "https://radiantearth.blob.core.windows.net/mlhub/rapidai4eo/stac-v1.0/catalog.json",
+      "access": "public",
+      "isApi": false
+    },
+    {
+      "id": 156,
+      "slug": "rosetta-osiris-anaglyphs",
+      "title": "Rosetta OSIRIS Anaglyphs of Comet 67P",
+      "url": "https://rosetta-3dcomet.cnes.fr/stac/collection.json",
+      "access": "public",
+      "isApi": false
+    },
+    {
+      "id": 31,
+      "slug": "s2-for-ghana",
+      "title": "S2 for Ghana",
+      "url": "https://gws-access.jasmin.ac.uk/public/odanceo/S2_L2/collection.json",
+      "access": "public",
+      "isApi": false
+    },
+    {
+      "id": 65,
+      "slug": "sentinel-3-aws",
+      "title": "Sentinel 3 Level 2+3 on AWS",
+      "url": "https://meeo-s3.s3.amazonaws.com/catalog.json",
+      "access": "public",
+      "isApi": false
+    },
+    {
+      "id": 11,
+      "slug": "sentinel-5p-level2-aws",
+      "title": "Sentinel 5P Level 2 on AWS",
+      "url": "https://meeo-s5p.s3.amazonaws.com/catalog.json",
+      "access": "public",
+      "isApi": false
+    },
+    {
+      "id": 59,
+      "slug": "sentinel-1-rtc-conus",
+      "title": "Sentinel-1 RTC CONUS",
+      "url": "https://raw.githubusercontent.com/scottyhq/sentinel1-rtc-stac/main/collection.json",
+      "access": "public",
+      "isApi": false
+    },
+    {
+      "id": 96,
+      "slug": "skyserve-mission-data",
+      "title": "SkyServe Mission Data",
+      "url": "https://api.ellipsis-drive.com/v3/ogc/stac/catalog/8a059125-b93d-4dda-b69b-9130fbe9f55e/epat_UK6PDdbzeJpySAvkdV55lztWjjrUZZmFzlYUQPbRFK2VnCxJQZ9twUJlv4ksKGc8",
+      "access": "public",
+      "isApi": true
+    },
+    {
+      "id": 175,
+      "slug": "soft-commodity-infrastructure-brazil",
+      "title": "Soft Commodity Infrastructure (Brazil)",
+      "url": "https://data.source.coop/tristangruppwri/soft-commodity-infrastructure/catalog.json",
+      "access": "public",
+      "isApi": false
+    },
+    {
+      "id": 162,
+      "slug": "south-american-rural-cadastral-boundaries",
+      "title": "South American Rural Cadastral Boundaries",
+      "url": "https://data.source.coop/tristangruppwri/cadastral/catalog.json",
+      "access": "public",
+      "isApi": false
+    },
+    {
+      "id": 116,
+      "slug": "space2stats-database",
+      "title": "Space2Stats Database",
+      "url": "https://worldbank.github.io/DECAT_Space2Stats/stac/catalog.json",
+      "access": "public",
+      "isApi": false
+    },
+    {
+      "id": 12,
+      "slug": "spot-orthoimages-canada-2005",
+      "title": "SPOT Orthoimages of Canada (2005-2010)",
+      "url": "https://canada-spot-ortho.s3.amazonaws.com/canada_spot_orthoimages/catalog.json",
+      "access": "public",
+      "isApi": false
+    },
+    {
+      "id": 187,
+      "slug": "super-resolved-sentinel-2-2-5m-stac-api",
+      "title": "Super-Resolved Sentinel-2 2.5m STAC API",
+      "url": "https://console.semablu.com/py/stac",
+      "access": "public",
+      "isApi": true
+    },
+    {
+      "id": 166,
+      "slug": "the-wildland-almanac-california",
+      "title": "The Wildland Almanac - California",
+      "url": "https://data.source.coop/wildland-almanac/california/catalog.json",
+      "access": "public",
+      "isApi": false
+    },
+    {
+      "id": 177,
+      "slug": "the-wildland-almanac-conus",
+      "title": "The Wildland Almanac - CONUS",
+      "url": "https://data.source.coop/wildland-almanac/conus/catalog.json",
+      "access": "public",
+      "isApi": false
+    },
+    {
+      "id": 173,
+      "slug": "the-wildland-almanac-treatment-scenarios",
+      "title": "The Wildland Almanac - Treatment Scenarios",
+      "url": "https://data.source.coop/wildland-almanac/treatment-scenarios/catalog.json",
+      "access": "public",
+      "isApi": false
+    },
+    {
+      "id": 137,
+      "slug": "thunen-earth-observation-theo",
+      "title": "Thünen Earth Observation (ThEO)",
+      "url": "https://eodata.thuenen.de/stac/api/v1/",
+      "access": "public",
+      "isApi": true
+    },
+    {
+      "id": 168,
+      "slug": "trazo-field-boundaries-of-south-america",
+      "title": "Trazo Field Boundaries of South America",
+      "url": "https://data.source.coop/wri-data-lab/trazofields/catalog.json",
+      "access": "public",
+      "isApi": false
+    },
+    {
+      "id": 172,
+      "slug": "trimet-geospatial-data",
+      "title": "TriMet Geospatial Data",
+      "url": "https://data.source.coop/cholmes/trimet/catalog.json",
+      "access": "public",
+      "isApi": false
+    },
+    {
+      "id": 54,
+      "slug": "uk-nceo-analysis-ready-data-ard",
+      "title": "UK NCEO Analysis Ready Data (ARD)",
+      "url": "https://gws-access.jasmin.ac.uk/public/nceo_ard/NCEO_ARD_STAC/catalog.json",
+      "access": "public",
+      "isApi": false
+    },
+    {
+      "id": 81,
+      "slug": "umbra-open-sar-data",
+      "title": "Umbra Open SAR Data",
+      "url": "https://s3.us-west-2.amazonaws.com/umbra-open-data-catalog/stac/catalog.json?.language=en",
+      "access": "public",
+      "isApi": false
+    },
+    {
+      "id": 125,
+      "slug": "us-ngda-transportation-theme-data",
+      "title": "United States : NGDA Transportation Theme Data",
+      "url": "https://ngda-transportation-geoplatform.hub.arcgis.com/api/search/v1/collections/all",
+      "access": "public",
+      "isApi": false
+    },
+    {
+      "id": 85,
+      "slug": "geoplatform-stac-catalog",
+      "title": "US GeoPlatform",
+      "url": "https://stac.geoplatform.gov/catalog.json",
+      "access": "public",
+      "isApi": false
+    },
+    {
+      "id": 13,
+      "slug": "usgs-3dep-lidar",
+      "title": "USGS 3DEP LiDAR Point Clouds",
+      "url": "https://s3-us-west-2.amazonaws.com/usgs-lidar-stac/ept/catalog.json",
+      "access": "public",
+      "isApi": false
+    },
+    {
+      "id": 38,
+      "slug": "usgs-astrogeology-ard",
+      "title": "USGS Astrogeology Provided Analysis Ready Data",
+      "url": "http://asc-stacbrowser.s3-website-us-west-2.amazonaws.com/catalog.json",
+      "access": "public",
+      "isApi": false
+    },
+    {
+      "id": 41,
+      "slug": "usgs-landsat-collection-2-api",
+      "title": "USGS Landsat Collection 2 API",
+      "url": "https://landsatlook.usgs.gov/stac-server/",
+      "access": "public",
+      "isApi": true
+    },
+    {
+      "id": 67,
+      "slug": "uvt-stac-catalog",
+      "title": "UVT STAC Catalog",
+      "url": "https://stac.sage.uvt.ro",
+      "access": "public",
+      "isApi": true
+    },
+    {
+      "id": 28,
+      "slug": "world-bank-light-every-night",
+      "title": "World Bank - Light Every Night",
+      "url": "https://globalnightlight.s3.amazonaws.com/VIIRS_npp_catalog.json",
+      "access": "public",
+      "isApi": false
+    },
+    {
+      "id": 133,
+      "slug": "worldpop-stac-api",
+      "title": "WorldPop STAC API",
+      "url": "https://api.stac.worldpop.org",
+      "access": "public",
+      "isApi": true
+    },
+    {
+      "id": 111,
+      "slug": "wyvern-open-data",
+      "title": "Wyvern Open Data",
+      "url": "https://wyvern-odp.com/catalog.json",
+      "access": "public",
+      "isApi": false
+    },
+    {
+      "id": 126,
+      "slug": "us-disasters-community",
+      "title": "🇺🇸  United States | Disasters Community Data",
+      "url": "https://disasters-geoplatform.hub.arcgis.com/api/search/v1/collections/all",
+      "access": "public",
+      "isApi": false
+    },
+    {
+      "id": 130,
+      "slug": "us-address-data-theme",
+      "title": "🇺🇸 United States | Address Data Theme",
+      "url": "https://api.fgdc.gov/ngda/address/",
+      "access": "public",
+      "isApi": false
+    },
+    {
+      "id": 127,
+      "slug": "us-al-geoportal-resources",
+      "title": "🇺🇸 United States | Alabama Geoportal Resources",
+      "url": "https://api.fgdc.gov/states/al/",
+      "access": "public",
+      "isApi": false
+    },
+    {
+      "id": 128,
+      "slug": "us-ak-geospatial-resources",
+      "title": "🇺🇸 United States | Alaska Geospatial Resources",
+      "url": "https://api.fgdc.gov/states/ak/",
+      "access": "public",
+      "isApi": false
+    },
+    {
+      "id": 131,
+      "slug": "us-cadastre-data-theme",
+      "title": "🇺🇸 United States | Cadastre Data Theme",
+      "url": "https://api.fgdc.gov/ngda/cadastre/",
+      "access": "public",
+      "isApi": false
+    },
+    {
+      "id": 129,
+      "slug": "us-ca-geospatial-resources",
+      "title": "🇺🇸 United States | California Geospatial Data",
+      "url": "https://api.fgdc.gov/states/ca/",
+      "access": "public",
+      "isApi": false
+    }
+  ]
+}

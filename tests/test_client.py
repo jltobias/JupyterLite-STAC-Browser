@@ -350,5 +350,30 @@ class ClientTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(len(fake.calls), count)
 
 
+
+
+class DigitalEarthAfricaTests(unittest.IsolatedAsyncioTestCase):
+    async def test_featured_endpoint_and_bounded_madagascar_search(self):
+        endpoint = 'https://explorer.digitalearth.africa/stac/'
+        self.assertEqual(PRESETS['deafrica'], endpoint)
+        calls = []
+        async def fetch(request):
+            calls.append(request)
+            path = urlsplit(request['url']).path
+            if path == '/stac/':
+                data = {**CATALOG, 'links': [{'rel': 'data', 'href': './collections'}, {'rel': 'search', 'href': './search'}]}
+            elif path == '/stac/collections':
+                data = {'collections': [{'id': 's2_l2a'}], 'links': []}
+            else:
+                data = {'type': 'FeatureCollection', 'features': [], 'links': []}
+            return data, request['url']
+        client = await STACBrowser(endpoint, fetch).connect()
+        await client.search(collection='s2_l2a', bbox=[45, -20.1, 47, -19.8], start='2020-01-01', end='2020-01-31', limit=3)
+        self.assertEqual(calls[0]['url'], endpoint)
+        self.assertEqual(parse_qs(urlsplit(calls[-1]['url']).query), {
+            'collections': ['s2_l2a'], 'bbox': ['45,-20.1,47,-19.8'], 'limit': ['3'],
+            'datetime': ['2020-01-01T00:00:00Z/2020-01-31T23:59:59.999999Z']})
+
+
 if __name__ == "__main__":
     unittest.main()

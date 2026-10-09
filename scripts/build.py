@@ -47,6 +47,7 @@ def main():
     for source in (ROOT / "notebooks").iterdir():
         if source.is_file():
             shutil.copy2(source, contents / source.name)
+    shutil.copy2(ROOT / "web/public-catalogs.json", contents / "public-catalogs.json")
     (contents / "site-config.json").write_text(json.dumps({"base_path": base}), encoding="utf-8")
     run(sys.executable, "-m", "jupyterlite_core", "build", "--contents", contents, "--output-dir", output / "lite")
     # Build in staging so notebooks can be included in the book without duplicate sources.
@@ -62,7 +63,7 @@ def main():
     env["PATH"] = str(Path(sys.executable).parent) + os.pathsep + env.get("PATH", "")
     run(sys.executable, "-m", "jupyter_book", "build", "--html", "--strict", cwd=book, env=env)
     shutil.copytree(book / "_build" / "html", output / "book")
-    for required in ["index.html", "explorer/index.html", "lite/lab/index.html", "book/index.html", "lite/files/stac_browser.py", "lite/files/site-config.json"]:
+    for required in ["index.html", "explorer/index.html", "explorer/public-catalogs.json", "lite/lab/index.html", "book/index.html", "lite/files/stac_browser.py", "lite/files/site-config.json", "lite/files/public-catalogs.json"]:
         if not (output / required).is_file():
             raise RuntimeError(f"Build is missing {required}")
     print(f"Built {output}. Preview with: python -m http.server 8000 --directory _site")

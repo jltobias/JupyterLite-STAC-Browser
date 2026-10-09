@@ -91,17 +91,14 @@ def main():
             for notebook, expected in notebooks:
                 searches.clear()
                 print(f"Opening {notebook}", flush=True)
-                page.goto(f"{base}/lite/lab/index.html?path={notebook}", wait_until="domcontentloaded")
-                page.locator(".jp-NotebookPanel:visible .jp-Notebook").wait_for()
                 document = json.loads((ROOT / '_site/lite/files' / notebook).read_text(encoding='utf-8'))
                 heading = ''.join(document['cells'][0]['source']).splitlines()[0].removeprefix('# ')
-                expect(page.locator('.jp-NotebookPanel:visible .jp-Notebook')).to_contain_text(heading)
                 if args.fixtures and notebook.startswith('03'):
-                    editor = page.locator('.jp-NotebookPanel:visible .jp-CodeCell .cm-content').last
-                    # Offscreen CodeMirror cells may not have rendered their source yet.
-                    # Start from the exact built notebook, not the virtualized DOM text.
-                    source = next(''.join(cell['source']) for cell in document['cells']
-                                  if cell['cell_type'] == 'code' and 'async def replay_saved' in ''.join(cell['source'])) + '''
+                    # Identify and edit the exact built source before Lite loads it.
+                    # DOM cell positions and text are incomplete under virtualization.
+                    replay_cell = next(cell for cell in document['cells']
+                                       if cell['cell_type'] == 'code' and 'async def replay_saved' in ''.join(cell['source']))
+                    replay_cell['source'] = ''.join(replay_cell['source']) + '''
 
 from copy import deepcopy
 for mode in ['bbox', 'polygon', 'none']:
@@ -116,19 +113,17 @@ for mode in ['bbox', 'polygon', 'none']:
     assert replay_items, mode
 print('Spatial replay passed: bbox, polygon, none')
 '''
-                    editor.click()
-                    page.keyboard.press('ControlOrMeta+a')
-                    page.keyboard.insert_text(source)
-                    page.keyboard.press('Escape')
                     expected = 'Spatial replay passed: bbox, polygon, none'
                 if args.copernicus:
-                    editor = page.locator(".jp-NotebookPanel:visible .jp-CodeCell .cm-content").first
-                    source = next(''.join(cell['source']) for cell in document['cells'] if cell['cell_type'] == 'code').replace("PRESETS['earthsearch']", "PRESETS['copernicus']")
-                    assert "PRESETS['copernicus']" in source, source
-                    editor.click()
-                    page.keyboard.press("ControlOrMeta+a")
-                    page.keyboard.insert_text(source)
-                    page.keyboard.press("Escape")
+                    connection_cell = next(cell for cell in document['cells'] if cell['cell_type'] == 'code')
+                    connection_cell['source'] = ''.join(connection_cell['source']).replace("PRESETS['earthsearch']", "PRESETS['copernicus']")
+                    assert "PRESETS['copernicus']" in connection_cell['source']
+                if notebook.startswith('03') and (args.fixtures or args.copernicus):
+                    context.route(f"**/lite/files/{notebook}*", lambda route: route.fulfill(
+                        body=json.dumps(document), content_type='application/json'))
+                page.goto(f"{base}/lite/lab/index.html?path={notebook}", wait_until="domcontentloaded")
+                page.locator(".jp-NotebookPanel:visible .jp-Notebook").wait_for()
+                expect(page.locator('.jp-NotebookPanel:visible .jp-Notebook')).to_contain_text(heading)
                 print("Notebook editor loaded; executing cells", flush=True)
                 page.get_by_text("Run", exact=True).first.click()
                 page.get_by_text("Run All Cells", exact=True).click()
@@ -156,6 +151,11 @@ print('Spatial replay passed: bbox, polygon, none')
                             assert [float(x) for x in query['bbox'][0].split(',')] == [30, -1, 33, 3]
                         elif mode == 'polygon':
                             assert json.loads(query['intersects'][0]) == {'type': 'Polygon', 'coordinates': [[[30, -1], [33, -1], [32, 3], [30, -1]]]}
+                if notebook.startswith('03'):
+                    snapshot = json.loads((ROOT / 'web/public-catalogs.json').read_text(encoding='utf-8'))
+                    assert (ROOT / '_site/lite/files/public-catalogs.json').read_bytes() == (ROOT / 'web/public-catalogs.json').read_bytes()
+                    assert any(f"Directory: {len(snapshot['catalogs'])} public listings; fetched {snapshot['fetched_at']}" in output for output in outputs), outputs
+                    assert any(snapshot['source'] in output and snapshot['api'] in output for output in outputs), outputs
                 if args.copernicus:
                     assert any("Source root: https://stac.dataspace.copernicus.eu/v1" in output for output in outputs), outputs
                     assert any("Saved earthsearch-items.geojson" in output for output in outputs), outputs
@@ -170,6 +170,13 @@ print('Spatial replay passed: bbox, polygon, none')
                         print("Notebook outputs:", page.locator(".jp-OutputArea").all_text_contents(), flush=True)
                         page.screenshot(path=str(results / "lite-failure.png"))
                         raise
+                    frame.locator('#preset').select_option('directory')
+                    expect(frame.locator('#directory-catalog')).to_be_enabled()
+                    snapshot = json.loads((ROOT / 'web/public-catalogs.json').read_text(encoding='utf-8'))
+                    expect(frame.locator('#directory-count')).to_contain_text(f"{len(snapshot['catalogs'])} public listings")
+                    frame.locator('#directory-filter').fill('earth')
+                    expect(frame.locator('#directory-catalog option')).not_to_have_count(1)
+                    frame.locator('#preset').select_option('worldpop')
                     frame.locator("#collection").select_option("UGA")
                     expect(frame.locator('#map .study-area')).to_have_count(1)
                     frame.locator('#polygon-area').click()

@@ -11,6 +11,7 @@ from urllib.parse import parse_qsl, urljoin, urlsplit, urlunsplit, urlencode
 PRESETS = {
     "worldpop": "https://api.stac.worldpop.org",
     "copernicus": "https://stac.dataspace.copernicus.eu/v1",
+    "deafrica": "https://explorer.digitalearth.africa/stac/",
     "earthsearch": "https://earth-search.aws.element84.com/v1",
     "planetary": "https://planetarycomputer.microsoft.com/api/stac/v1",
 }
