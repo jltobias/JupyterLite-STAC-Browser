@@ -1,4 +1,4 @@
-import {STACClient, PRESETS, safeURL, localToday, earliestCollectionDate} from './stac.js';
+import {STACClient, PRESETS, safeURL, localToday, earliestCollectionDate, copernicusDownloadAccess} from './stac.js';
 import {StudyArea} from './study-area.js';
 import {createDirectoryChooser, endpointProblem} from './catalog-directory.js';
 const $ = id => document.getElementById(id);
@@ -154,7 +154,7 @@ function datasetDownloads(item) {
   const heading = el('h3', 'Download dataset'); heading.id = 'download-heading';
   section.append(heading);
   const assets = el('ul', null, 'download-assets'), base = client.baseFor(item);
-  let fileLinks = 0, restrictedFileLinks = 0, restrictedAssets = false;
+  let fileLinks = 0, restrictedFileLinks = 0, otherRestrictedAssets = false, copernicusLinks = 0, copernicusDataLinks = 0;
   const collection = client.collections.find(c => c.id === item.collection);
   const entries = Object.entries(item.assets || {}).filter(([, asset]) => asset && typeof asset === 'object' && typeof asset.href === 'string');
   // Put explicitly advertised data before previews and other supporting assets.
@@ -175,17 +175,31 @@ function datasetDownloads(item) {
     }
     li.append(el('strong', label));
     li.append(el('small', `${asset.type || 'type unspecified'}${roles.length ? ' · ' + roles.join(', ') : ''}`));
-    const auth = Array.isArray(access['auth:refs']) && access['auth:refs'].length > 0;
+    const copernicus = copernicusDownloadAccess(href, item, base);
+    const auth = Boolean(copernicus) || (Array.isArray(access['auth:refs']) && access['auth:refs'].length > 0);
     if (auth) {
-      restrictedAssets = true;
+      if (!copernicus) otherRestrictedAssets = true;
       li.append(el('small', 'Provider authentication required'));
-      for (const ref of access['auth:refs']) {
+      for (const ref of Array.isArray(access['auth:refs']) ? access['auth:refs'] : []) {
         if (typeof ref !== 'string') continue;
         const scheme = item.properties?.['auth:schemes']?.[ref] || collection?.['auth:schemes']?.[ref];
         if (typeof scheme?.description === 'string') li.append(el('small', scheme.description));
       }
     }
-    if (/^s3:/i.test(href)) {
+    if (copernicus) {
+      copernicusLinks++;
+      if (!supporting) copernicusDataLinks++;
+      const link = addLink(li, supporting ? 'Open in Copernicus ↗' : 'Open in Copernicus to download ↗', copernicus.browserURL);
+      link.className = `${supporting ? 'asset-supporting' : 'asset-download'} asset-provider`;
+      link.setAttribute('aria-label', `Open ${label} in Copernicus to download (sign-in required)`);
+      li.append(el('small', copernicus.itemSpecific
+        ? `Log in there, find “${asset.title || key}” (expand if needed), select HTTPS if offered, then Download.`
+        : `Log in there and search for Item “${item.id}” in collection “${item.collection || 'not specified'}”. Find “${asset.title || key}” (expand if needed), select HTTPS if offered, then Download.`));
+      const address = el('input'); address.type = 'text'; address.readOnly = true; address.value = safeURL(href, base, true);
+      address.setAttribute('aria-label', `${label} authenticated API URL`);
+      address.addEventListener('focus', () => address.select());
+      li.append(el('small', 'For authenticated API clients: copy this URL and send an Authorization: Bearer header.'), address);
+    } else if (/^s3:/i.test(href)) {
       li.append(el('small', 'S3; use a compatible client with the asset address below.'));
       const address = el('input'); address.type = 'text'; address.readOnly = true; address.value = href;
       address.setAttribute('aria-label', `${label} asset address`);
@@ -201,10 +215,18 @@ function datasetDownloads(item) {
     }
     assets.append(li);
   }
-  section.append(el('p', fileLinks
+  section.append(el('p', copernicusDataLinks
+    ? 'Copernicus downloads require sign-in. Open the dataset in the official Copernicus STAC browser, log in, and expand the named asset. Select HTTPS if offered, then Download. Opening the raw API URL alone returns 401 Unauthorized. Files contain the full asset, not a study-area clip.'
+    : fileLinks
     ? `${fileLinks === restrictedFileLinks ? 'These data links require provider authentication.' : 'Choose a file below.'} Files open at the provider; if displayed, use your browser’s Save option. Downloads contain the full asset, not a study-area clip.`
     : 'No browser-downloadable data file is advertised. Check the asset instructions and Source links below for provider access.', 'download-help'));
-  if (restrictedAssets) section.append(el('p', 'This browser does not sign in or sign URLs. Follow the provider’s access instructions; item metadata can still be saved below.', 'download-help'));
+  if (copernicusLinks) {
+    if (!copernicusDataLinks) section.append(el('p', 'Copernicus supporting files require sign-in. Open them in the provider browser and follow the instructions beside each file.', 'download-help'));
+    const help = el('p', null, 'download-help');
+    addLink(help, 'Copernicus sign-in and download instructions ↗', 'https://documentation.dataspace.copernicus.eu/APIs/OData.html#product-download');
+    section.append(help);
+  }
+  if (otherRestrictedAssets) section.append(el('p', 'This browser does not sign in or sign URLs. Follow the provider’s access instructions; item metadata can still be saved below.', 'download-help'));
   if (assets.children.length) section.append(assets);
   else section.append(el('p', 'No assets supplied.'));
   const metadata = el('button', 'Download item metadata (.json)', 'metadata-download'); metadata.type = 'button';

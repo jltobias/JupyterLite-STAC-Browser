@@ -17,6 +17,32 @@ export function safeURL(value, base, httpsOnly = false) {
   return url.href;
 }
 
+export function copernicusDownloadAccess(href, item, base) {
+  // CDSE OData downloads require a bearer header; an ordinary link cannot add it.
+  let assetURL;
+  try { assetURL = new URL(safeURL(href, base, true)); } catch { return null; }
+  if (assetURL.origin !== 'https://download.dataspace.copernicus.eu' ||
+      !/^\/odata\/v1\/Products\([^/]+\)(?:\/.*)?\/\$(?:value|zip)$/i.test(assetURL.pathname)) return null;
+  const browserRoot = 'https://browser.stac.dataspace.copernicus.eu/';
+  const sources = (Array.isArray(item.links) ? item.links : []).filter(l => l?.rel === 'self' && typeof l.href === 'string').map(l => l.href);
+  sources.push(base);
+  let officialSource = false;
+  for (const source of sources) {
+    try {
+      const url = new URL(safeURL(source, base, true));
+      if (url.origin !== 'https://stac.dataspace.copernicus.eu' || !url.pathname.startsWith('/v1/')) continue;
+      officialSource = true;
+      if (/^\/v1\/collections\/[^/]+\/items\/[^/]+\/?$/.test(url.pathname)) {
+        return {browserURL: browserRoot + url.pathname.slice(4), itemSpecific: true};
+      }
+    } catch { /* Untrusted or absent self links must not control the provider origin. */ }
+  }
+  const segment = value => typeof value === 'string' && value.trim() && !['.', '..'].includes(value) ? encodeURIComponent(value) : null;
+  const collection = segment(item.collection), id = segment(item.id);
+  if (officialSource && collection && id) return {browserURL: `${browserRoot}collections/${collection}/items/${id}`, itemSpecific: true};
+  return {browserURL: browserRoot, itemSpecific: false};
+}
+
 export function bboxValue(values) {
   const bbox = typeof values === 'string' ? values.split(',').map(v => v.trim() === '' ? NaN : Number(v)) : values;
   if (!Array.isArray(bbox) || bbox.length !== 4 || !bbox.every(Number.isFinite) ||

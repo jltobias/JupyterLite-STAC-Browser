@@ -107,5 +107,69 @@ def check_downloads(page, catalog, items):
             section.get_by_role('button', name='Download item metadata (.json)', exact=True).click()
         assert json.loads(Path(result.value.path()).read_text(encoding='utf-8')) == item
         assert len(asset_requests) == 1
+
+    # COG HTTPS alternatives and direct NetCDF OData URLs must use provider sign-in.
+    protected_requests = []
+    provider_root = 'https://browser.stac.dataspace.copernicus.eu/'
+    def reject_protected(route):
+        protected_requests.append(route.request.url)
+        route.fulfill(status=401, body='Unauthorized')
+    def provider_page(route):
+        route.fulfill(content_type='text/html', body='<h1>Synthetic Copernicus sign-in page</h1>')
+    page.context.route('https://download.dataspace.copernicus.eu/**', reject_protected)
+    page.context.route(provider_root + '**', provider_page)
+    for format in ['cog', 'nc']:
+        collection = 'clms_ndvi_global_300m_10daily_v2_' + format
+        product = 'c_gls_NDVI300_202512210000_GLOBE_OLCI_V2.0.1_' + format
+        path = f'collections/{collection}/items/{product}'
+        api_url = f'https://download.dataspace.copernicus.eu/odata/v1/Products(ccf70f3b-7b04-41f9-ade5-1443a085748e)/Nodes({product})/Nodes(file.{"tiff" if format == "cog" else "nc"})/$value'
+        item.update(id=product, collection=collection, links=[{'rel': 'self', 'href': 'https://stac.dataspace.copernicus.eu/v1/' + path}])
+        # Deliberately omit auth:refs for one variant: the known protected endpoint is sufficient.
+        item['assets'] = {'qflag': {'href': 's3://fixture/file.tiff', 'title': 'Quality Flag on Normalized Difference Vegetation Index', 'alternate': {'https': {'href': api_url}}, 'roles': ['data']}} if format == 'cog' else {'ndvi': {'href': api_url, 'roles': ['data'], 'auth:refs': ['oidc']}}
+        if format == 'cog':
+            item['assets']['Product'] = {'href': api_url.split('/Nodes(')[0] + '/$value', 'title': 'Zipped product', 'roles': ['data', 'archive']}
+        select()
+        expect(section).to_contain_text('Copernicus downloads require sign-in')
+        expect(section).to_contain_text('401 Unauthorized')
+        expect(section).to_contain_text('select HTTPS if offered, then Download')
+        expect(section.locator('.asset-provider')).to_have_count(2 if format == 'cog' else 1)
+        expect(section.locator('.asset-provider').first).to_have_attribute('href', provider_root + path)
+        assert section.locator('.asset-provider').first.get_attribute('download') is None
+        expect(section.get_by_role('textbox').first).to_have_value(api_url)
+        expect(section.get_by_role('textbox').first).to_have_attribute('readonly', '')
+        if format == 'cog':
+            expect(section).to_contain_text('find “Quality Flag on Normalized Difference Vegetation Index” (expand if needed)')
+            expect(section).to_contain_text('find “Zipped product” (expand if needed)')
+        assert section.locator('a[href^="https://download.dataspace.copernicus.eu"]').count() == 0
+        with page.context.expect_page() as opened:
+            section.locator('.asset-provider').first.click()
+        popup = opened.value
+        expect(popup).to_have_url(provider_root + path)
+        expect(popup.locator('h1')).to_have_text('Synthetic Copernicus sign-in page')
+        popup.close()
+        assert not protected_requests
+        with page.expect_download() as result:
+            section.get_by_role('button', name='Download item metadata (.json)', exact=True).click()
+        assert json.loads(Path(result.value.path()).read_text(encoding='utf-8')) == item
+    item['links'] = []
+    select()
+    expect(section.locator('.asset-provider')).to_have_attribute('href', provider_root)
+    expect(section).to_contain_text(f'search for Item “{item["id"]}”')
+    item['assets'] = {'metadata': {'href': api_url, 'roles': ['metadata'], 'title': 'Product metadata'}}
+    select()
+    expect(section.locator('.asset-download')).to_have_count(0)
+    expect(section.locator('.asset-supporting.asset-provider')).to_have_count(1)
+    expect(section).to_contain_text('No browser-downloadable data file is advertised')
+    expect(section).to_contain_text('Copernicus supporting files require sign-in')
+    item['assets'] = {'copernicus': {'href': api_url, 'roles': ['data']}, 'public': {'href': host + '/public.tif'}, 'restricted': restricted}
+    select()
+    expect(section.locator('.asset-download')).to_have_count(3)
+    expect(section.locator('.asset-provider')).to_have_count(1)
+    expect(section).to_contain_text('Copernicus downloads require sign-in')
+    expect(section).to_contain_text('This browser does not sign in or sign URLs')
+    assert not protected_requests
+    assert len(asset_requests) == 1
+    page.context.unroute('https://download.dataspace.copernicus.eu/**', reject_protected)
+    page.context.unroute(provider_root + '**', provider_page)
     page.context.unroute(host + '/**', fixture)
     print('Dataset downloads passed: attachment bytes, relative URLs, multi-file, preview, metadata-only, and selection changes', flush=True)

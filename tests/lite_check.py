@@ -227,6 +227,34 @@ print('Spatial replay passed: bbox, polygon, none')
                         assert Path(asset_download.value.path()).read_bytes() == ATTACHMENT
                         assert asset_requests == ['https://download-fixture.test/population.tif']
                     assert len(search_requests) == count_before_resume
+                    if args.fixtures:
+                        protected = copy.deepcopy(items['features'][0])
+                        protected.update(id='synthetic-nc', collection='clms_ndvi_global_300m_10daily_v2_nc')
+                        item_path = 'collections/clms_ndvi_global_300m_10daily_v2_nc/items/synthetic-nc'
+                        protected['links'] = [{'rel': 'self', 'href': 'https://stac.dataspace.copernicus.eu/v1/' + item_path}]
+                        protected['assets'] = {'ndvi': {'href': 'https://download.dataspace.copernicus.eu/odata/v1/Products(fixture)/Nodes(file.nc)/$value', 'roles': ['data']}}
+                        def protected_fixture(route):
+                            data = {'type': 'FeatureCollection', 'features': [protected], 'links': []} if '/search' in route.request.url else {**catalog, 'links': [{'rel': 'search', 'href': './search'}]}
+                            route.fulfill(body=json.dumps(data), content_type='application/json', headers={'Access-Control-Allow-Origin': '*'})
+                        def browser_fixture(route):
+                            route.fulfill(content_type='text/html', body='<h1>Synthetic provider login</h1>')
+                        context.route('https://iframe-copernicus.test/**', protected_fixture)
+                        context.route('https://browser.stac.dataspace.copernicus.eu/**', browser_fixture)
+                        frame.locator('#preset').select_option('custom')
+                        frame.locator('#endpoint').fill('https://iframe-copernicus.test/')
+                        frame.locator('#connect').click()
+                        expect(frame.locator('#search')).to_be_enabled()
+                        frame.locator('#search').click()
+                        frame.locator('.result-card').first.click()
+                        expect(frame.locator('.asset-provider')).to_have_attribute('href', 'https://browser.stac.dataspace.copernicus.eu/' + item_path)
+                        with context.expect_page() as opened:
+                            frame.locator('.asset-provider').click()
+                        popup = opened.value
+                        expect(popup.locator('h1')).to_have_text('Synthetic provider login')
+                        popup.close()
+                        context.unroute('https://iframe-copernicus.test/**', protected_fixture)
+                        context.unroute('https://browser.stac.dataspace.copernicus.eu/**', browser_fixture)
+                        print('Embedded Copernicus sign-in handoff passed', flush=True)
                     print("Embedded map displayed " + ("synthetic fixture results" if args.fixtures else "live WorldPop results"), flush=True)
                 page.screenshot(path=str(results / (notebook.replace(".ipynb", "") + ".png")))
                 print(f"PASS {notebook}: {expected}", flush=True)

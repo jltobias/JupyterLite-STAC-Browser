@@ -3,12 +3,37 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {polygonValue} from '../web/geometry.js';
-import {STACClient, PRESETS, dateRange, viewportBBox, fetchJSON, localToday, earliestCollectionDate, collectionBBox} from '../web/stac.js';
+import {STACClient, PRESETS, dateRange, viewportBBox, fetchJSON, localToday, earliestCollectionDate, collectionBBox, copernicusDownloadAccess} from '../web/stac.js';
 
 const root = {type: 'Catalog', id: 'synthetic', stac_version: '1.0.0', links: [{rel: 'data', href: './collections'}, {rel: 'search', href: './search'}]};
 const item = (id, extra = {}) => ({type: 'Feature', id, stac_version: '1.0.0', properties: {}, geometry: null, links: [], assets: {}, ...extra});
 const page = (features, links = []) => ({type: 'FeatureCollection', features, links});
 const fetcher = handler => async (url, options) => ({ok: true, url, json: async () => structuredClone(await handler(new URL(url), options))});
+
+test('protected Copernicus assets use the official sign-in browser and preserve item paths', () => {
+  const api = 'https://stac.dataspace.copernicus.eu/v1/';
+  const file = 'https://download.dataspace.copernicus.eu/odata/v1/Products(abc)/Nodes(product)/Nodes(file.tiff)/$value';
+  for (const format of ['cog', 'nc']) {
+    const path = `collections/clms_ndvi_${format}/items/product_${format}`;
+    const record = item(`product_${format}`, {collection: `clms_ndvi_${format}`, links: [{rel: 'self', href: api + path + '?ignore=1#fragment'}]});
+    const original = structuredClone(record);
+    assert.deepEqual(copernicusDownloadAccess(file, record, 'https://mirror.test/item.json'), {
+      browserURL: 'https://browser.stac.dataspace.copernicus.eu/' + path, itemSpecific: true,
+    });
+    assert.deepEqual(record, original);
+    record.links = [];
+    assert.equal(copernicusDownloadAccess(file, record, api + 'search').browserURL, 'https://browser.stac.dataspace.copernicus.eu/' + path);
+    record.links = [{rel: 'self', href: './product_' + format}];
+    assert.equal(copernicusDownloadAccess(file, record, api + path).itemSpecific, true);
+  }
+  const fallback = {browserURL: 'https://browser.stac.dataspace.copernicus.eu/', itemSpecific: false};
+  assert.deepEqual(copernicusDownloadAccess(file, item('unmapped'), 'https://mirror.test/search'), fallback);
+  assert.deepEqual(copernicusDownloadAccess(file, item('..', {collection: '..'}), api + 'search'), fallback);
+  assert.equal(copernicusDownloadAccess(file.replace('/Nodes(product)/Nodes(file.tiff)/$value', '/$zip'), item('x'), api).itemSpecific, false);
+  for (const href of ['https://data.worldpop.org/data.tif', file.replace('download.dataspace.copernicus.eu', 'download.dataspace.copernicus.eu.evil.test'), file.replace('https://', 'https://user:secret@'), 'javascript:alert(1)', 's3://eodata/file.tif']) {
+    assert.equal(copernicusDownloadAccess(href, item('x'), api), null);
+  }
+});
 
 test('simple polygon validation matches shared geometry cases', () => {
   const cases = JSON.parse(readFileSync(new URL('./fixtures/study-geometries.json', import.meta.url)));
