@@ -140,6 +140,12 @@ print('Spatial replay passed: bbox, polygon, none')
                 page.get_by_text("Run All Cells", exact=True).click()
                 deadline = time.monotonic() + 240
                 while True:
+                    # A fresh deployed origin can ask for its kernel after Run
+                    # All, before producing any outputs. Complete that real UI.
+                    kernel_dialog = page.locator('.jp-Dialog').filter(has_text='Select Kernel')
+                    if kernel_dialog.is_visible():
+                        kernel_dialog.get_by_role('combobox').select_option(label='Python (Pyodide)')
+                        kernel_dialog.get_by_role('button', name='Select', exact=True).click()
                     errors = page.locator(".jp-NotebookPanel:visible .jp-OutputArea-error").all_text_contents()
                     assert not errors, f"{notebook}: {errors}"
                     outputs = page.locator(".jp-NotebookPanel:visible .jp-OutputArea-output").all_text_contents()
