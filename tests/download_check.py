@@ -6,7 +6,7 @@ from urllib.parse import urlsplit
 
 from playwright.sync_api import expect
 
-ATTACHMENT = b'II\x2a\x00Synthetic attachment fixture, not a real raster.'
+from raster_clip_check import ATTACHMENT, check_crop_downloads
 
 
 def check_downloads(page, catalog, items):
@@ -90,6 +90,7 @@ def check_downloads(page, catalog, items):
     restricted = {'href': host + '/restricted.tif', 'title': 'Restricted file', 'auth:refs': ['signing']}
     item['properties']['auth:schemes'] = {'signing': {'type': 'signedUrl', 'description': 'Obtain a signed URL from the provider. <script>unsafe()</script>'}}
     for assets, expected_links in [({'data': restricted}, 1), ({}, 0), ({'thumbnail': item['assets']['preview']}, 0),
+                                   ({'data': {**item['assets']['raster'], 'roles': {'bad': 'metadata'}}}, 1),
                                    ({'data': item['assets']['raster']}, 1)]:
         item['id'] += '-next'
         item['assets'] = assets
@@ -124,6 +125,7 @@ def check_downloads(page, catalog, items):
         path = f'collections/{collection}/items/{product}'
         api_url = f'https://download.dataspace.copernicus.eu/odata/v1/Products(ccf70f3b-7b04-41f9-ade5-1443a085748e)/Nodes({product})/Nodes(file.{"tiff" if format == "cog" else "nc"})/$value'
         item.update(id=product, collection=collection, links=[{'rel': 'self', 'href': 'https://stac.dataspace.copernicus.eu/v1/' + path}])
+        item['properties']['datetime'] = '2025-12-21T00:00:00Z'
         # Deliberately omit auth:refs for one variant: the known protected endpoint is sufficient.
         item['assets'] = {'qflag': {'href': 's3://fixture/file.tiff', 'title': 'Quality Flag on Normalized Difference Vegetation Index', 'alternate': {'https': {'href': api_url}}, 'roles': ['data']}} if format == 'cog' else {'ndvi': {'href': api_url, 'roles': ['data'], 'auth:refs': ['oidc']}}
         if format == 'cog':
@@ -140,6 +142,18 @@ def check_downloads(page, catalog, items):
         if format == 'cog':
             expect(section).to_contain_text('find “Quality Flag on Normalized Difference Vegetation Index” (expand if needed)')
             expect(section).to_contain_text('find “Zipped product” (expand if needed)')
+            page.locator('#bbox').fill('30,-1,31,1')
+            page.locator('#bbox').press('Tab')
+            section.locator('.provider-subset').click()
+            expect(section.locator('.provider-subset-result')).to_contain_text('Frozen bbox: 30, -1, 31, 1')
+            mapped = section.get_by_role('link', name='Open mapped dataset and date in Copernicus ↗').get_attribute('href')
+            assert 'COPERNICUS_CLMS_NDVI_300M_10DAILY_V2' in mapped and '2025-12-21' in mapped
+            with page.expect_download() as aoi:
+                section.get_by_role('button', name='Download bbox AOI (.geojson)').click()
+            assert json.loads(Path(aoi.value.path()).read_text())['features'][0]['geometry']['coordinates'][0] == [[30, -1], [31, -1], [31, 1], [30, 1], [30, -1]]
+        else:
+            expect(section).to_contain_text('NetCDF clipping unavailable')
+            expect(section.locator('.provider-subset, .asset-clip')).to_have_count(0)
         assert section.locator('a[href^="https://download.dataspace.copernicus.eu"]').count() == 0
         with page.context.expect_page() as opened:
             section.locator('.asset-provider').first.click()
@@ -172,4 +186,5 @@ def check_downloads(page, catalog, items):
     page.context.unroute('https://download.dataspace.copernicus.eu/**', reject_protected)
     page.context.unroute(provider_root + '**', provider_page)
     page.context.unroute(host + '/**', fixture)
+    check_crop_downloads(page, catalog, item)
     print('Dataset downloads passed: attachment bytes, relative URLs, multi-file, preview, metadata-only, and selection changes', flush=True)

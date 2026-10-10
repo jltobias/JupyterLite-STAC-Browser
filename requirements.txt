@@ -4,3 +4,4 @@ jupyterlite-core==0.6.4
 jupyterlite-pyodide-kernel==0.6.1
 nbformat==5.10.4
 playwright==1.63.0
+rasterio==1.4.4

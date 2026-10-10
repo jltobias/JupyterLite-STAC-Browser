@@ -128,6 +128,7 @@ export class StudyArea {
   }
   draw() {
     this.drawing = true; this.setEditing(false);
+    this.changed();
     this.map.pm.enableDraw('Rectangle', {snappable: false, continueDrawing: false, pathOptions: {pane: 'study', color: '#7b3fb2', pmIgnore: false}, tooltips: true});
     this.updateControls(); this.status('Click two opposite corners to draw a rectangle. Cancel keeps the previous study area.');
   }
@@ -173,6 +174,14 @@ export class StudyArea {
     this.status((this.edited ? 'Collection coverage shown. Your edited study area is kept; use Show study area to return to it.' : 'Collection coverage shown; default study rectangle updated.') + (searchable ? ' Select Search to load items.' : ' Browse child or item links; remote search is unavailable.'));
   }
   snapshot() { return {shape: this.shape, geometry: structuredClone(this.geometry), bbox: geometryBBox(this.geometry)}; }
+  clipSnapshot() {
+    if (this.drawing) throw new Error('Finish or cancel drawing before clipping.');
+    const entered = bboxValue(this.input.value), current = this.snapshot();
+    if (this.input.getAttribute('aria-invalid') === 'true' || entered.some((v, i) => v !== current.bbox[i])) throw new Error('Apply a valid study bounding box before clipping.');
+    if (this.vertices.getAttribute('aria-invalid') === 'true') throw new Error('Correct or discard invalid polygon coordinates before clipping.');
+    if (this.shape === 'polygon') polygonValue(this.geometry);
+    return current;
+  }
   searchParameters() {
     if (this.drawing) throw new Error('Finish or cancel drawing before searching.');
     if (this.mode.value !== 'none') {

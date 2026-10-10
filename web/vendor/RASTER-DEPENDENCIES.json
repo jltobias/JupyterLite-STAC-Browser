@@ -1,0 +1,100 @@
+[
+  {
+    "name": "geotiff",
+    "version": "3.0.5",
+    "tarball": "https://registry.npmjs.org/geotiff/-/geotiff-3.0.5.tgz",
+    "integrity": "sha512-OWcL9S9+yDZ6iAlXMt32T1iwUApJM8UiD47xbm6ZP1h33d10fqkPs14EG/ttT5EnefpZSx3G15iDFC5FxUNUwA==",
+    "upstream_commit": "4a296052fb90aa2cc673f573d6f95d14167a8fbc",
+    "file": "geotiff-3.0.5.js",
+    "sha256": "8cfc01ffc945904766d8fb89f19da7afb799e342834454f5592fbcf0bcfe2db5"
+  },
+  {
+    "bundled_with": "geotiff",
+    "name": "@petamoriken/float16",
+    "version": "3.9.3",
+    "tarball": "https://registry.npmjs.org/@petamoriken/float16/-/float16-3.9.3.tgz",
+    "integrity": "sha512-8awtpHXCx/bNpFt4mt2xdkgtgVvKqty8VbjHI/WWWQuEw+KLzFot3f4+LkQY9YmOtq7A5GdOnqoIC8Pdygjk2g==",
+    "lock_source": "https://raw.githubusercontent.com/geotiffjs/geotiff.js/4a296052fb90aa2cc673f573d6f95d14167a8fbc/package-lock.json"
+  },
+  {
+    "bundled_with": "geotiff",
+    "name": "lerc",
+    "version": "3.0.0",
+    "tarball": "https://registry.npmjs.org/lerc/-/lerc-3.0.0.tgz",
+    "integrity": "sha512-Rm4J/WaHhRa93nCN2mwWDZFoRVF18G1f47C+kvQWyHGEZxFpTUi73p7lMVSAndyxGt6lJ2/CFbOcf9ra5p8aww==",
+    "lock_source": "https://raw.githubusercontent.com/geotiffjs/geotiff.js/4a296052fb90aa2cc673f573d6f95d14167a8fbc/package-lock.json"
+  },
+  {
+    "bundled_with": "geotiff",
+    "name": "pako",
+    "version": "2.0.4",
+    "tarball": "https://registry.npmjs.org/pako/-/pako-2.0.4.tgz",
+    "integrity": "sha512-v8tweI900AUkZN6heMU/4Uy4cXRc2AYNRggVmTR+dEncawDJgCdLMximOVA2p4qO57WMynangsfGRb5WD6L1Bg==",
+    "lock_source": "https://raw.githubusercontent.com/geotiffjs/geotiff.js/4a296052fb90aa2cc673f573d6f95d14167a8fbc/package-lock.json"
+  },
+  {
+    "bundled_with": "geotiff",
+    "name": "parse-headers",
+    "version": "2.0.4",
+    "tarball": "https://registry.npmjs.org/parse-headers/-/parse-headers-2.0.4.tgz",
+    "integrity": "sha512-psZ9iZoCNFLrgRjZ1d8mn0h9WRqJwFxM9q3x7iUjN/YT2OksthDJ5TiPCu2F38kS4zutqfW+YdVVkBZZx3/1aw==",
+    "lock_source": "https://raw.githubusercontent.com/geotiffjs/geotiff.js/4a296052fb90aa2cc673f573d6f95d14167a8fbc/package-lock.json"
+  },
+  {
+    "bundled_with": "geotiff",
+    "name": "quick-lru",
+    "version": "6.1.1",
+    "tarball": "https://registry.npmjs.org/quick-lru/-/quick-lru-6.1.1.tgz",
+    "integrity": "sha512-S27GBT+F0NTRiehtbrgaSE1idUAJ5bX8dPAQTdylEyNlrdcH5X4Lz7Edz3DYzecbsCluD5zO8ZNEe04z3D3u6Q==",
+    "lock_source": "https://raw.githubusercontent.com/geotiffjs/geotiff.js/4a296052fb90aa2cc673f573d6f95d14167a8fbc/package-lock.json"
+  },
+  {
+    "bundled_with": "geotiff",
+    "name": "web-worker",
+    "version": "1.5.0",
+    "tarball": "https://registry.npmjs.org/web-worker/-/web-worker-1.5.0.tgz",
+    "integrity": "sha512-RiMReJrTAiA+mBjGONMnjVDP2u3p9R1vkcGz6gDIrOMT3oGuYwX2WRMYI9ipkphSuE5XKEhydbhNEJh4NY9mlw==",
+    "lock_source": "https://raw.githubusercontent.com/geotiffjs/geotiff.js/4a296052fb90aa2cc673f573d6f95d14167a8fbc/package-lock.json"
+  },
+  {
+    "bundled_with": "geotiff",
+    "name": "xml-utils",
+    "version": "1.10.2",
+    "tarball": "https://registry.npmjs.org/xml-utils/-/xml-utils-1.10.2.tgz",
+    "integrity": "sha512-RqM+2o1RYs6T8+3DzDSoTRAUfrvaejbVHcp3+thnAtDKo8LskR+HomLajEy5UjTz24rpka7AxVBRR3g2wTUkJA==",
+    "lock_source": "https://raw.githubusercontent.com/geotiffjs/geotiff.js/4a296052fb90aa2cc673f573d6f95d14167a8fbc/package-lock.json"
+  },
+  {
+    "bundled_with": "geotiff",
+    "name": "zstddec",
+    "version": "0.2.0",
+    "tarball": "https://registry.npmjs.org/zstddec/-/zstddec-0.2.0.tgz",
+    "integrity": "sha512-oyPnDa1X5c13+Y7mA/FDMNJrn4S8UNBe0KCqtDmor40Re7ALrPN6npFwyYVRRh+PqozZQdeg23QtbcamZnG5rA==",
+    "lock_source": "https://raw.githubusercontent.com/geotiffjs/geotiff.js/4a296052fb90aa2cc673f573d6f95d14167a8fbc/package-lock.json"
+  },
+  {
+    "name": "proj4",
+    "version": "2.19.10",
+    "tarball": "https://registry.npmjs.org/proj4/-/proj4-2.19.10.tgz",
+    "integrity": "sha512-uL6/C6kA8+ncJAEDmUeV8PmNJcTlRLDZZa4/87CzRpb8My4p+Ame4LhC4G3H/77z2icVqcu3nNL9h5buSdnY+g==",
+    "upstream_commit": "7c6296485462f6f03dcc1d1852b9e976bf23bfb1",
+    "file": "proj4-2.19.10.js",
+    "sha256": "ae2c4005bd390f89472d0f241bb960c015c1ee5149ca972ba096ff9158f2244e"
+  },
+  {
+    "bundled_with": "proj4",
+    "name": "mgrs",
+    "version": "1.0.0",
+    "tarball": "https://registry.npmjs.org/mgrs/-/mgrs-1.0.0.tgz",
+    "integrity": "sha512-awNbTOqCxK1DBGjalK3xqWIstBZgN6fxsMSiXLs9/spqWkF2pAhb2rrYCFSsr1/tT7PhcDGjZndG8SWYn0byYA==",
+    "lock_source": "https://raw.githubusercontent.com/proj4js/proj4js/7c6296485462f6f03dcc1d1852b9e976bf23bfb1/package-lock.json"
+  },
+  {
+    "bundled_with": "proj4",
+    "name": "wkt-parser",
+    "version": "1.5.1",
+    "tarball": "https://registry.npmjs.org/wkt-parser/-/wkt-parser-1.5.1.tgz",
+    "integrity": "sha512-o78jtCrTSs+qT3s9GMfrpRZHCze/fzNbAV2+rUEAjWPP08te0oPoyASrdtOHcAdEPMgSn8atjnlnAqmCvuAqSA==",
+    "lock_source": "https://raw.githubusercontent.com/proj4js/proj4js/7c6296485462f6f03dcc1d1852b9e976bf23bfb1/package-lock.json"
+  }
+]

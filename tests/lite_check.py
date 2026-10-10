@@ -16,6 +16,7 @@ from urllib.parse import urlsplit, parse_qs
 
 from playwright.sync_api import sync_playwright, expect
 from download_check import ATTACHMENT
+from raster_clip_check import BBOX, fulfill_raster, verify_crop
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -87,8 +88,7 @@ def main():
                 asset_requests = []
                 def attachment(route):
                     asset_requests.append(route.request.url)
-                    route.fulfill(body=ATTACHMENT, content_type='application/octet-stream',
-                                  headers={'Content-Disposition': 'attachment; filename="population.tif"'})
+                    fulfill_raster(route)
                 context.route('https://download-fixture.test/**', attachment)
             page = context.new_page()
             page.set_default_timeout(120000)
@@ -226,6 +226,13 @@ print('Spatial replay passed: bbox, polygon, none')
                         assert asset_download.value.suggested_filename == 'population.tif'
                         assert Path(asset_download.value.path()).read_bytes() == ATTACHMENT
                         assert asset_requests == ['https://download-fixture.test/population.tif']
+                        frame.locator('#bbox').fill(','.join(map(str, BBOX)))
+                        frame.locator('#bbox').press('Tab')
+                        frame.locator('#spatial-mode').select_option('none')
+                        with page.expect_download() as crop_download:
+                            frame.locator('.asset-clip').first.click()
+                        verify_crop(ATTACHMENT, Path(crop_download.value.path()).read_bytes())
+                        expect(frame.locator('.crop-status').first).to_contain_text('Saved 29 × 41 pixels')
                     assert len(search_requests) == count_before_resume
                     if args.fixtures:
                         protected = copy.deepcopy(items['features'][0])

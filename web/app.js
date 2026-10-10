@@ -1,6 +1,8 @@
 import {STACClient, PRESETS, safeURL, localToday, earliestCollectionDate, copernicusDownloadAccess} from './stac.js';
 import {StudyArea} from './study-area.js';
 import {createDirectoryChooser, endpointProblem} from './catalog-directory.js';
+import {startRasterClip} from './raster-clip.js';
+import {copernicusSubset} from './copernicus-subset.js';
 const $ = id => document.getElementById(id);
 const client = new STACClient();
 L.PM.setOptIn(true);
@@ -11,11 +13,17 @@ const footprints = L.featureGroup().addTo(map);
 let itemLayers = new WeakMap();
 let busy = false, connected = false;
 let startEdited = false;
+let cropJob = null, cropSelection = 0;
+function cancelCrop(message = 'Crop canceled because the selection or settings changed. No file was saved.') {
+  cropJob?.cancel(message); cropJob = null;
+}
 const directory = createDirectoryChooser(selectionChanged => {
   if (selectionChanged && $('preset').value === 'directory') $('endpoint').value = directory.selection?.url || '';
   controls();
 });
 function queryChanged() {
+  cancelCrop();
+  queueMicrotask(updateCropBounds);
   if (client.query) $('result-context').textContent = 'Search settings changed. Displayed results and exports still describe the completed search. Select Search to refresh them.';
 }
 const study = new StudyArea(map, {status, changed: queryChanged});
@@ -69,6 +77,7 @@ $('collection').onchange = () => {
 $('start').oninput = () => { startEdited = true; queryChanged(); };
 for (const id of ['end', 'limit', 'bbox']) $(id).addEventListener('input', queryChanged);
 async function connect(url) {
+  cancelCrop(); cropSelection++;
   connected = false; client.reset(); renderResults(); collectionOptions(); dateDefaults(); controls();
   study.showCollection(null); $('result-context').textContent = '';
   $('metadata').replaceChildren(el('p', 'Select a footprint or an item to inspect its metadata.', 'empty'));
@@ -88,6 +97,7 @@ async function connect(url) {
     const button = el('button', `${link.rel} · ${link.title || link.href}`);
     button.type = 'button';
     button.onclick = () => run(async () => {
+      cancelCrop(); cropSelection++;
       if (link.rel === 'item') { await client.openItem(link); renderResults(); select(client.items[0]); status('Loaded one static STAC Item.'); }
       else await connect(safeURL(link.href, client.url, true));
     });
@@ -115,6 +125,7 @@ $('search-form').onsubmit = event => {
   try { spatial = study.searchParameters(); }
   catch (error) { status(error.message, true); return; }
   run(async () => {
+  cancelCrop(); cropSelection++;
   status('Searching metadata…');
   await client.search({...spatial, collection: $('collection').value, start: $('start').value, end: $('end').value, limit: $('limit').value});
   study.setEditing(false);
@@ -148,11 +159,86 @@ function addLink(parent, text, href, base) {
   try { const a = el('a', text); a.href = safeURL(href, base); a.target = '_blank'; a.rel = 'noopener noreferrer'; parent.append(a); return a; }
   catch { parent.append(el('span', `${text} (unsafe link omitted)`)); }
 }
+function updateCropBounds() {
+  const label = document.querySelector('.crop-bounds');
+  if (!label) return;
+  try { const area = study.clipSnapshot(); label.textContent = `Current study bbox (W/S/E/N): ${area.bbox.join(', ')}${area.shape === 'polygon' ? ' · polygon envelope' : ''}. Used in every search mode.`; }
+  catch (error) { label.textContent = error.message; }
+}
+function saveBlob(name, blob) {
+  const url = URL.createObjectURL(blob), link = el('a'); link.href = url; link.download = name;
+  link.click(); setTimeout(() => URL.revokeObjectURL(url), 10000);
+}
+function cropOption(li, {item, key, asset, href, supporting, auth, copernicus}) {
+  if (Array.isArray(asset.roles) && asset.roles.some(role => ['thumbnail', 'overview'].includes(role))) {
+    li.append(el('small', 'Bbox clipping unavailable for previews and overviews; these are not source raster data.', 'clip-unavailable'));
+    return;
+  }
+  const subset = copernicus ? copernicusSubset(item, key, asset) : null;
+  if (subset?.unavailable) { li.append(el('small', subset.unavailable, 'clip-unavailable')); return; }
+  if (subset?.create && !supporting) {
+    li.append(el('small', `Provider bbox subset: NDVI 300m V2 · ${subset.date} · raw ${subset.band} (${subset.sampleType}). Sign-in required; Analytical GeoTIFF only.`, 'subset-help'));
+    const prepare = el('button', 'Prepare Copernicus bbox subset', 'provider-subset'); prepare.type = 'button';
+    const result = el('div', null, 'provider-subset-result');
+    prepare.onclick = () => {
+      result.replaceChildren();
+      try {
+        const area = study.clipSnapshot(), plan = subset.create(area.bbox);
+        result.append(el('small', `Frozen bbox: ${area.bbox.join(', ')}. Date: ${subset.date}; band: ${subset.band}.`));
+        const aoi = el('button', 'Download bbox AOI (.geojson)'); aoi.type = 'button'; aoi.onclick = () => download('study-bbox.geojson', plan.aoi);
+        result.append(aoi); addLink(result, 'Open mapped dataset and date in Copernicus ↗', plan.url);
+        result.append(el('small', 'The link sets the map view, date and raw-band script; it cannot carry the AOI. Sign in, import the downloaded GeoJSON with the Area of Interest upload control, then Image Download → Analytical → GeoTIFF. Select the custom script, original/native resolution and suitable CRS; verify the date and band. Provider export may resample/regrid and has size limits; its output is not guaranteed to match a source-pixel window. A rendered preview is not source data. If the exact date/product is unavailable, keep the original download.'));
+      } catch (error) { result.append(el('small', error.message, 'error')); }
+    };
+    li.append(prepare, result); return;
+  }
+  let validURL = false;
+  try { href = safeURL(href); validURL = true; } catch { /* Preserve the existing access instructions. */ }
+  const netcdf = /netcdf|\.nc(?:\b|$)/i.test(`${asset.type || ''} ${href}`);
+  const tiff = /(?:image\/(?:tiff|geotiff)|application\/geotiff)/i.test(asset.type || '') || /\.tiff?(?:[/?#)]|$)/i.test(href);
+  if (supporting || !validURL || auth || !tiff || netcdf || (Array.isArray(asset.roles) && asset.roles.includes('archive'))) {
+    li.append(el('small', netcdf ? 'NetCDF clipping unavailable: no verified NetCDF subset route is available. Keep the original .nc download; no GeoTIFF conversion is offered.' : auth ? 'Bbox clipping unavailable here: provider authentication or signing is required; use its access workflow.' : supporting ? 'Bbox clipping unavailable for previews and metadata; these are not source raster data.' : 'Bbox clipping unavailable for this format or access URL. Keep the original file download.', 'clip-unavailable'));
+    return;
+  }
+  const clip = el('button', 'Clip study bbox → GeoTIFF', 'asset-clip'), cancel = el('button', 'Cancel crop', 'crop-cancel'), message = el('p', '', 'crop-status');
+  clip.type = cancel.type = 'button'; cancel.hidden = true; message.setAttribute('role', 'status'); message.setAttribute('aria-live', 'polite');
+  cancel.onclick = () => cancelCrop('Crop canceled. No file was saved.');
+  clip.onclick = async () => {
+    if (cropJob) return;
+    let area;
+    try { area = study.clipSnapshot(); } catch (error) { message.textContent = error.message; return; }
+    const selected = cropSelection, frozenText = `Frozen bbox: ${area.bbox.join(', ')}. `;
+    message.textContent = frozenText + 'Reading raster headers…';
+    document.querySelectorAll('.asset-clip').forEach(button => { button.disabled = true; }); cancel.hidden = false;
+    let job;
+    try {
+      job = startRasterClip({url: href, bbox: area.bbox, provenance: {item_id: item.id, collection: item.collection,
+        item_datetime: item.properties?.datetime, asset_key: key, asset: structuredClone(asset), study_area: area,
+        stac_root: client.url, item_source: client.baseFor(item), license: item.properties?.license || client.collections.find(c => c.id === item.collection)?.license}}, progress => {
+        if (progress.phase === 'estimate') message.textContent = frozenText + `Output: ${progress.width} × ${progress.height} pixels, EPSG:${progress.epsg}; extent ${progress.bounds.join(', ')}. About ${(progress.outputBytes / 2 ** 20).toFixed(2)} MiB plus metadata; ${progress.blocks} intersecting blocks.`;
+        else if (progress.phase === 'pixels') message.textContent = frozenText + `Reading block ${progress.completed}/${progress.blocks}; ${(progress.bytes / 2 ** 20).toFixed(2)} MiB transferred.`;
+        else if (progress.phase === 'write') message.textContent = frozenText + 'Writing source pixels and spatial metadata…';
+      });
+      cropJob = job;
+      const result = await job.promise;
+      if (cropJob !== job || selected !== cropSelection || !clip.isConnected) return;
+      const name = `${item.id}-${key}-bbox`.replace(/[^a-zA-Z0-9_.-]/g, '_').slice(0, 150);
+      saveBlob(name + '.tif', new Blob([result.buffer], {type: 'image/tiff'}));
+      message.textContent = frozenText + `Saved ${result.width} × ${result.height} pixels in EPSG:${result.epsg}. Actual output extent: ${result.bounds.join(', ')}. Pixel edges align to the source grid; all supported source bands and NoData are retained.`;
+      const provenance = el('button', 'Download crop provenance (.json)'); provenance.type = 'button'; provenance.onclick = () => download(name + '.json', result.provenance);
+      message.append(provenance);
+    } catch (error) { message.textContent = frozenText + error.message; }
+    finally { if (cropJob === job) cropJob = null; cancel.hidden = true; document.querySelectorAll('.asset-clip').forEach(button => { button.disabled = Boolean(cropJob); }); }
+  };
+  li.append(clip, cancel, message);
+}
 function datasetDownloads(item) {
   const section = el('section', null, 'dataset-downloads');
   section.setAttribute('aria-labelledby', 'download-heading');
   const heading = el('h3', 'Download dataset'); heading.id = 'download-heading';
   section.append(heading);
+  section.append(el('p', '', 'crop-bounds'), el('p', 'Full-file links retain the original asset. Clip study bbox saves a source-resolution GeoTIFF on the source pixel grid. Transfers include headers and complete intersecting blocks, which may extend beyond the bbox. Browser limits: 64 MiB output, 128 MiB transfer/decoded blocks, 16 MiB per block and two minutes per job.', 'download-help'));
+  queueMicrotask(updateCropBounds);
   const assets = el('ul', null, 'download-assets'), base = client.baseFor(item);
   let fileLinks = 0, restrictedFileLinks = 0, otherRestrictedAssets = false, copernicusLinks = 0, copernicusDataLinks = 0;
   const collection = client.collections.find(c => c.id === item.collection);
@@ -176,7 +262,7 @@ function datasetDownloads(item) {
     li.append(el('strong', label));
     li.append(el('small', `${asset.type || 'type unspecified'}${roles.length ? ' · ' + roles.join(', ') : ''}`));
     const copernicus = copernicusDownloadAccess(href, item, base);
-    const auth = Boolean(copernicus) || (Array.isArray(access['auth:refs']) && access['auth:refs'].length > 0);
+    const auth = Boolean(copernicus) || [asset, access].some(value => Array.isArray(value['auth:refs']) && value['auth:refs'].length > 0);
     if (auth) {
       if (!copernicus) otherRestrictedAssets = true;
       li.append(el('small', 'Provider authentication required'));
@@ -213,6 +299,7 @@ function datasetDownloads(item) {
         if (!supporting) { link.setAttribute('download', ''); fileLinks++; if (auth) restrictedFileLinks++; }
       }
     }
+    cropOption(li, {item, key, asset, href, supporting, auth, copernicus});
     assets.append(li);
   }
   section.append(el('p', copernicusDataLinks
@@ -235,6 +322,7 @@ function datasetDownloads(item) {
   return section;
 }
 function select(item, button) {
+  cancelCrop(); cropSelection++;
   footprints.eachLayer(layer => layer.setStyle({color: '#386a4e', weight: 1.7, fillOpacity: 0}));
   const layer = itemLayers.get(item);
   if (layer) { layer.setStyle({color: '#b56c28', weight: 3, fillOpacity: .12}); layer.bringToFront(); if (layer.getBounds().isValid()) map.fitBounds(layer.getBounds(), {maxZoom: 9, padding: [20, 20]}); }

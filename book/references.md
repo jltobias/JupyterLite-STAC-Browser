@@ -20,6 +20,10 @@ These projects inform the workflow; their source code is not copied into this re
 
 ## Software and artwork
 
+- [GeoTIFF.js 3.0.5](https://github.com/geotiffjs/geotiff.js) and [Proj4js 2.19.10](https://github.com/proj4js/proj4js) — MIT. Pinned bundles and dependency licenses are vendored under `web/vendor`; `scripts/vendor_raster.py` reproduces the files from integrity-checked upstream archives.
+- [rasterio](https://rasterio.readthedocs.io/) — BSD-3-Clause; uses GDAL for independent raster crop validation in tests.
+- Copernicus subset workflow: [NDVI 300m V2 source bands](https://documentation.dataspace.copernicus.eu/APIs/SentinelHub/Data/clms/bio-geophysical-parameters/vegetation/vegetation-indices/ndvi_global_300m_10daily_v2.html), [Browser deep-link parameters](https://github.com/eu-cdse/copernicus-browser/blob/main/public/deep-linking.md), [AOI import](https://documentation.dataspace.copernicus.eu/Applications/Browser.html#areapoint-of-interest), and [Analytical GeoTIFF export](https://documentation.dataspace.copernicus.eu/Applications/Browser.html#image-download). The provider workflow requires sign-in and may regrid; it is not a verified NetCDF subset capability.
+
 - [Leaflet 1.9.4](https://leafletjs.com/) — BSD-2-Clause; the vendored distribution retains its license.
 - [Leaflet-Geoman Free 2.20.0](https://github.com/geoman-io/leaflet-geoman/tree/v2.20.0) — MIT; public [edit](https://geoman.io/docs/leaflet/modes/edit-mode) and [drag](https://geoman.io/docs/leaflet/modes/drag-mode) APIs power the study-area controls. Its license and bundled dependency notices are in `web/vendor/LICENSE-geoman` and `web/vendor/GEOMAN-DEPENDENCY-LICENSES.txt`.
 - [JupyterLite](https://jupyterlite.readthedocs.io/) and [jupyterlite-pyodide-kernel](https://github.com/jupyterlite/pyodide-kernel) — BSD-3-Clause.
