@@ -1,4 +1,5 @@
 import {bboxValue, safeURL} from './stac.js';
+import {protectedURL, readProtectedRange} from './copernicus-session.js';
 
 export const CLIP_LIMITS = Object.freeze({output: 64 * 2 ** 20, transfer: 128 * 2 ** 20,
   decoded: 128 * 2 ** 20, block: 16 * 2 ** 20, metadata: 8 * 2 ** 20, requests: 4096,
@@ -8,8 +9,8 @@ const checkSize = (value, limit) => { if (!Number.isSafeInteger(value) || value 
 
 /** Only exact, single HTTP byte ranges are accepted. Never consume a 200 body. */
 export class RangeSource {
-  constructor(url, {signal, progress = () => {}, fetcher = fetch, limits = CLIP_LIMITS} = {}) {
-    this.url = safeURL(url); this.signal = signal; this.progress = progress;
+  constructor(url, {signal, progress = () => {}, fetcher = fetch, limits = CLIP_LIMITS, auth} = {}) {
+    this.url = auth ? protectedURL(url) : safeURL(url); this.auth = auth; this.signal = signal; this.progress = progress;
     this.fetcher = fetcher; this.limits = limits; this.bytes = 0; this.requests = 0;
     this.fileSize = null; this.etag = null; this.tail = Promise.resolve();
   }
@@ -28,6 +29,13 @@ export class RangeSource {
     if (this.fileSize !== null) length = Math.min(length, this.fileSize - offset);
     if (length <= 0) throw new Error('Invalid raster byte offset.');
     checkSize(this.bytes + length, this.limits.transfer);
+    if (this.auth) {
+      const result = await readProtectedRange(this.url, this.auth, {offset, length, signal: this.signal, fetcher: this.fetcher, allowShort: true, requestMs: this.limits.requestMs});
+      if ((this.fileSize !== null && result.total !== null && result.total !== this.fileSize) || (this.etag && result.etag !== this.etag)) throw new Error('Source changed during clipping. Retry the selected asset.');
+      this.fileSize ??= result.total; this.etag ||= result.etag;
+      this.bytes += result.buffer.byteLength; this.progress({phase: 'transfer', bytes: this.bytes, requests: this.requests});
+      return result.buffer;
+    }
     const controller = new AbortController();
     const abort = () => controller.abort();
     this.signal?.addEventListener('abort', abort, {once: true});
@@ -212,7 +220,7 @@ function boundedLZW(buffer, size) {
 }
 
 export async function clipRaster(request, {GeoTIFF, proj4, fetcher = fetch, signal, progress = () => {}, limits = CLIP_LIMITS}) {
-  const bbox = bboxValue(request.bbox), source = new RangeSource(request.url, {fetcher, signal, progress, limits});
+  const bbox = bboxValue(request.bbox), source = new RangeSource(request.url, {fetcher, signal, progress, limits, auth: request.auth});
   await preflight(source, limits);
   const tiff = await GeoTIFF.GeoTIFF.fromSource(source, {cache: false}), image = await tiff.getImage(0), fd = image.getFileDirectory();
   const keys = await image.getGeoKeys(), epsg = Number(keys?.ProjectedCSTypeGeoKey || keys?.GeographicTypeGeoKey);

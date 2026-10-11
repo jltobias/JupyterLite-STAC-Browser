@@ -3,6 +3,7 @@ import {StudyArea} from './study-area.js';
 import {createDirectoryChooser, endpointProblem} from './catalog-directory.js';
 import {startRasterClip} from './raster-clip.js';
 import {copernicusSubset} from './copernicus-subset.js';
+import {CopernicusSession, isProtectedURL, readProtectedRange, downloadOriginal, originalFilename} from './copernicus-session.js';
 const $ = id => document.getElementById(id);
 const client = new STACClient();
 L.PM.setOptIn(true);
@@ -14,10 +15,35 @@ let itemLayers = new WeakMap();
 let busy = false, connected = false;
 let startEdited = false;
 let cropJob = null, cropSelection = 0;
+let selectedItem = null;
+const copernicusSession = new CopernicusSession(message => {
+  $('copernicus-token').value = '';
+  $('copernicus-status').textContent = message + (copernicusSession.loaded ? ` Session ends by ${new Date(copernicusSession.expiresAt).toLocaleTimeString()}.` : '');
+  if (selectedItem) {
+    const current = document.querySelector('.dataset-downloads'), updated = datasetDownloads(selectedItem);
+    // Preserve public asset nodes and their active crop handlers in mixed items.
+    for (const row of current?.querySelectorAll('[data-session-asset]') || []) {
+      const replacement = [...updated.querySelectorAll('[data-session-asset]')].find(node => node.dataset.sessionAsset === row.dataset.sessionAsset);
+      if (replacement) row.replaceWith(replacement);
+    }
+    const help = updated.querySelector('.session-download-help');
+    if (help) current?.querySelector('.session-download-help')?.replaceWith(help);
+  }
+});
+$('copernicus-form').onsubmit = event => {
+  event.preventDefault();
+  try { copernicusSession.load($('copernicus-token').value); }
+  catch (error) { $('copernicus-status').textContent = error.message; }
+  finally { $('copernicus-token').value = ''; }
+};
+$('copernicus-clear').onclick = () => copernicusSession.clear();
+addEventListener('pagehide', () => { copernicusSession.clear(); cancelCrop(); });
 function cancelCrop(message = 'Crop canceled because the selection or settings changed. No file was saved.') {
+  copernicusSession.cancelJobs();
   cropJob?.cancel(message); cropJob = null;
 }
 const directory = createDirectoryChooser(selectionChanged => {
+  if (selectionChanged) cancelCrop();
   if (selectionChanged && $('preset').value === 'directory') $('endpoint').value = directory.selection?.url || '';
   controls();
 });
@@ -77,7 +103,7 @@ $('collection').onchange = () => {
 $('start').oninput = () => { startEdited = true; queryChanged(); };
 for (const id of ['end', 'limit', 'bbox']) $(id).addEventListener('input', queryChanged);
 async function connect(url) {
-  cancelCrop(); cropSelection++;
+  cancelCrop(); cropSelection++; selectedItem = null;
   connected = false; client.reset(); renderResults(); collectionOptions(); dateDefaults(); controls();
   study.showCollection(null); $('result-context').textContent = '';
   $('metadata').replaceChildren(el('p', 'Select a footprint or an item to inspect its metadata.', 'empty'));
@@ -106,6 +132,7 @@ async function connect(url) {
   status(client.searchLink ? 'Connected. Choose a collection or search all collections in this area.' : 'Static catalog connected. Browse child or item links above; remote search is unavailable.');
 }
 $('preset').onchange = () => {
+  cancelCrop();
   const preset = PRESETS[$('preset').value], fromDirectory = $('preset').value === 'directory';
   $('directory-panel').hidden = !fromDirectory;
   if (preset) $('endpoint').value = preset[1];
@@ -113,6 +140,7 @@ $('preset').onchange = () => {
   else { $('endpoint').value = ''; $('endpoint').focus(); }
   controls();
 };
+$('endpoint').addEventListener('input', () => cancelCrop());
 $('connect-form').onsubmit = event => {
   event.preventDefault();
   if ($('connect').disabled) return;
@@ -128,6 +156,9 @@ $('search-form').onsubmit = event => {
   cancelCrop(); cropSelection++;
   status('Searching metadata…');
   await client.search({...spatial, collection: $('collection').value, start: $('start').value, end: $('end').value, limit: $('limit').value});
+  // Old-item controls remain usable while search awaits. Invalidate those jobs too.
+  cancelCrop(); cropSelection++;
+  selectedItem = null;
   study.setEditing(false);
   $('result-context').textContent = `Completed search: ${client.provenance().spatial_mode === 'none' ? 'no study-area spatial filter' : client.query.intersects ? 'exact polygon' : 'bounding box'}. Results and exports describe this query.`;
   $('metadata').replaceChildren(el('p', 'Select one of the new results to inspect its metadata.', 'empty'));
@@ -169,13 +200,14 @@ function saveBlob(name, blob) {
   const url = URL.createObjectURL(blob), link = el('a'); link.href = url; link.download = name;
   link.click(); setTimeout(() => URL.revokeObjectURL(url), 10000);
 }
-function cropOption(li, {item, key, asset, href, supporting, auth, copernicus}) {
+function cropOption(li, {item, key, asset, href, supporting, auth, copernicus, authURL}) {
+  const authenticated = Boolean(authURL && copernicusSession.loaded);
   if (Array.isArray(asset.roles) && asset.roles.some(role => ['thumbnail', 'overview'].includes(role))) {
     li.append(el('small', 'Bbox clipping unavailable for previews and overviews; these are not source raster data.', 'clip-unavailable'));
     return;
   }
   const subset = copernicus ? copernicusSubset(item, key, asset) : null;
-  if (subset?.unavailable) { li.append(el('small', subset.unavailable, 'clip-unavailable')); return; }
+  if (subset?.unavailable) { li.append(el('small', subset.unavailable, 'clip-unavailable')); if (!authenticated || /netcdf/i.test(subset.unavailable)) return; }
   if (subset?.create && !supporting) {
     li.append(el('small', `Provider bbox subset: NDVI 300m V2 · ${subset.date} · raw ${subset.band} (${subset.sampleType}). Sign-in required; Analytical GeoTIFF only.`, 'subset-help'));
     const prepare = el('button', 'Prepare Copernicus bbox subset', 'provider-subset'); prepare.type = 'button';
@@ -190,47 +222,98 @@ function cropOption(li, {item, key, asset, href, supporting, auth, copernicus}) 
         result.append(el('small', 'The link sets the map view, date and raw-band script; it cannot carry the AOI. Sign in, import the downloaded GeoJSON with the Area of Interest upload control, then Image Download → Analytical → GeoTIFF. Select the custom script, original/native resolution and suitable CRS; verify the date and band. Provider export may resample/regrid and has size limits; its output is not guaranteed to match a source-pixel window. A rendered preview is not source data. If the exact date/product is unavailable, keep the original download.'));
       } catch (error) { result.append(el('small', error.message, 'error')); }
     };
-    li.append(prepare, result); return;
+    li.append(prepare, result); if (!authenticated) return;
   }
   let validURL = false;
   try { href = safeURL(href); validURL = true; } catch { /* Preserve the existing access instructions. */ }
   const netcdf = /netcdf|\.nc(?:\b|$)/i.test(`${asset.type || ''} ${href}`);
   const tiff = /(?:image\/(?:tiff|geotiff)|application\/geotiff)/i.test(asset.type || '') || /\.tiff?(?:[/?#)]|$)/i.test(href);
-  if (supporting || !validURL || auth || !tiff || netcdf || (Array.isArray(asset.roles) && asset.roles.includes('archive'))) {
+  if (supporting || !validURL || (auth && !authenticated) || !tiff || netcdf || (Array.isArray(asset.roles) && asset.roles.includes('archive'))) {
     li.append(el('small', netcdf ? 'NetCDF clipping unavailable: no verified NetCDF subset route is available. Keep the original .nc download; no GeoTIFF conversion is offered.' : auth ? 'Bbox clipping unavailable here: provider authentication or signing is required; use its access workflow.' : supporting ? 'Bbox clipping unavailable for previews and metadata; these are not source raster data.' : 'Bbox clipping unavailable for this format or access URL. Keep the original file download.', 'clip-unavailable'));
     return;
   }
   const clip = el('button', 'Clip study bbox → GeoTIFF', 'asset-clip'), cancel = el('button', 'Cancel crop', 'crop-cancel'), message = el('p', '', 'crop-status');
   clip.type = cancel.type = 'button'; cancel.hidden = true; message.setAttribute('role', 'status'); message.setAttribute('aria-live', 'polite');
+  clip.disabled = Boolean(cropJob);
   cancel.onclick = () => cancelCrop('Crop canceled. No file was saved.');
   clip.onclick = async () => {
     if (cropJob) return;
+    copernicusSession.cancelJobs();
     let area;
     try { area = study.clipSnapshot(); } catch (error) { message.textContent = error.message; return; }
     const selected = cropSelection, frozenText = `Frozen bbox: ${area.bbox.join(', ')}. `;
     message.textContent = frozenText + 'Reading raster headers…';
     document.querySelectorAll('.asset-clip').forEach(button => { button.disabled = true; }); cancel.hidden = false;
-    let job;
+    let job, sessionJob;
     try {
-      job = startRasterClip({url: href, bbox: area.bbox, provenance: {item_id: item.id, collection: item.collection,
+      if (authenticated) sessionJob = copernicusSession.job();
+      job = startRasterClip({url: authenticated ? authURL : href, bbox: area.bbox, ...(sessionJob ? {auth: sessionJob.auth()} : {}), provenance: {item_id: item.id, collection: item.collection,
         item_datetime: item.properties?.datetime, asset_key: key, asset: structuredClone(asset), study_area: area,
         stac_root: client.url, item_source: client.baseFor(item), license: item.properties?.license || client.collections.find(c => c.id === item.collection)?.license}}, progress => {
+        if (selected !== cropSelection || !clip.isConnected || sessionJob?.signal.aborted) return;
         if (progress.phase === 'estimate') message.textContent = frozenText + `Output: ${progress.width} × ${progress.height} pixels, EPSG:${progress.epsg}; extent ${progress.bounds.join(', ')}. About ${(progress.outputBytes / 2 ** 20).toFixed(2)} MiB plus metadata; ${progress.blocks} intersecting blocks.`;
         else if (progress.phase === 'pixels') message.textContent = frozenText + `Reading block ${progress.completed}/${progress.blocks}; ${(progress.bytes / 2 ** 20).toFixed(2)} MiB transferred.`;
         else if (progress.phase === 'write') message.textContent = frozenText + 'Writing source pixels and spatial metadata…';
       });
       cropJob = job;
+      sessionJob?.signal.addEventListener('abort', () => job.cancel('Session cleared, replaced, expired, or operation canceled. No file was saved.'), {once: true});
       const result = await job.promise;
       if (cropJob !== job || selected !== cropSelection || !clip.isConnected) return;
+      sessionJob?.assert();
       const name = `${item.id}-${key}-bbox`.replace(/[^a-zA-Z0-9_.-]/g, '_').slice(0, 150);
       saveBlob(name + '.tif', new Blob([result.buffer], {type: 'image/tiff'}));
       message.textContent = frozenText + `Saved ${result.width} × ${result.height} pixels in EPSG:${result.epsg}. Actual output extent: ${result.bounds.join(', ')}. Pixel edges align to the source grid; all supported source bands and NoData are retained.`;
       const provenance = el('button', 'Download crop provenance (.json)'); provenance.type = 'button'; provenance.onclick = () => download(name + '.json', result.provenance);
       message.append(provenance);
-    } catch (error) { message.textContent = frozenText + error.message; }
-    finally { if (cropJob === job) cropJob = null; cancel.hidden = true; document.querySelectorAll('.asset-clip').forEach(button => { button.disabled = Boolean(cropJob); }); }
+    } catch (error) { if (clip.isConnected) message.textContent = frozenText + error.message; }
+    finally { sessionJob?.finish(); if (cropJob === job) cropJob = null; cancel.hidden = true; document.querySelectorAll('.asset-clip').forEach(button => { button.disabled = Boolean(cropJob); }); }
   };
   li.append(clip, cancel, message);
+}
+function protectedControls(li, {href, asset, key}) {
+  if (!copernicusSession.loaded) { li.append(el('small', 'Optional: load your CDSE OData access token in Copernicus connection to check or download this asset here.')); return; }
+  const group = el('div', null, 'protected-controls'), message = el('p', '', 'protected-status');
+  message.setAttribute('role', 'status'); message.setAttribute('aria-live', 'polite');
+  const check = el('button', 'Check access and ranges', 'asset-check');
+  const original = el('button', typeof window.showSaveFilePicker === 'function' ? 'Save original to file' : 'Download original (up to 128 MiB)', 'asset-original');
+  const fallback = el('button', 'Browser download (up to 128 MiB)', 'asset-original-fallback');
+  const cancel = el('button', 'Cancel transfer', 'transfer-cancel'); cancel.hidden = true;
+  fallback.hidden = typeof window.showSaveFilePicker !== 'function';
+  const buttons = [check, original, fallback]; for (const button of [...buttons, cancel]) button.type = 'button';
+  let current;
+  cancel.onclick = () => current?.cancel();
+  const perform = async (mode, picker) => {
+    cancelCrop();
+    const selected = cropSelection;
+    let job;
+    const visible = () => selected === cropSelection && group.isConnected && current === job;
+    try {
+      job = copernicusSession.job(); current = job;
+      buttons.forEach(button => { button.disabled = true; }); cancel.hidden = false; cancel.disabled = false;
+      message.textContent = mode === 'check' ? 'Checking only this asset with bytes 0–15…' : 'Preparing original download…';
+      if (mode === 'check') {
+        const result = await readProtectedRange(href, job.auth(), {signal: job.signal}); job.assert();
+        if (visible()) message.textContent = result.total === null
+          ? 'This asset returned exactly 16 bytes with HTTP 206. Content-Range is hidden, so byte offsets cannot be independently verified. Other assets and full clipping are not verified.'
+          : 'This asset returned exactly 16 bytes with HTTP 206 and verified offsets 0–15. Other assets and full clipping are not verified.';
+      } else {
+        // downloadOriginal invokes the picker before awaiting anything, preserving activation.
+        const bytes = await downloadOriginal(href, job, {picker, filename: originalFilename(href, asset, key),
+          save: (name, blob) => { job.assert(); if (visible()) saveBlob(name, blob); },
+          progress: progress => {
+            if (!visible() || job.signal.aborted) return;
+            if (progress.phase === 'commit') { message.textContent = 'Finishing save. The completed file can no longer be canceled.'; cancel.disabled = true; }
+            else message.textContent = `Received ${(progress.bytes / 2 ** 20).toFixed(2)} MiB${progress.total === null ? ' (size unknown)' : ` of ${(progress.total / 2 ** 20).toFixed(2)} MiB`}. Cancel stops this transfer.`;
+          }});
+        if (visible()) message.textContent = `Saved original file (${(bytes / 2 ** 20).toFixed(2)} MiB). Original bytes and format retained.`;
+      }
+    } catch (error) { if (visible()) message.textContent = error.message; }
+    finally { job?.finish(); if (visible()) { buttons.forEach(button => { button.disabled = false; }); cancel.hidden = true; current = null; } }
+  };
+  check.onclick = () => perform('check');
+  original.onclick = () => perform('original', typeof window.showSaveFilePicker === 'function' ? options => window.showSaveFilePicker(options) : undefined);
+  fallback.onclick = () => perform('original');
+  group.append(check, original, fallback, cancel, message); li.append(group);
 }
 function datasetDownloads(item) {
   const section = el('section', null, 'dataset-downloads');
@@ -262,6 +345,12 @@ function datasetDownloads(item) {
     li.append(el('strong', label));
     li.append(el('small', `${asset.type || 'type unspecified'}${roles.length ? ' · ' + roles.join(', ') : ''}`));
     const copernicus = copernicusDownloadAccess(href, item, base);
+    // Inspect the source spelling, before safeURL can normalize a hostile path.
+    const authURL = isProtectedURL(access.href) ? access.href : null;
+    let sessionAsset = Boolean(copernicus);
+    try { sessionAsset ||= new URL(safeURL(href)).origin === 'https://download.dataspace.copernicus.eu'; } catch { /* Unsafe links receive no session controls. */ }
+    if (sessionAsset) li.dataset.sessionAsset = key;
+    if (sessionAsset && !authURL) li.append(el('small', 'Token access is unavailable for this URL: it is outside the permitted Copernicus download scope. Use the official provider browser.', 'scope-unavailable'));
     const auth = Boolean(copernicus) || [asset, access].some(value => Array.isArray(value['auth:refs']) && value['auth:refs'].length > 0);
     if (auth) {
       if (!copernicus) otherRestrictedAssets = true;
@@ -299,14 +388,17 @@ function datasetDownloads(item) {
         if (!supporting) { link.setAttribute('download', ''); fileLinks++; if (auth) restrictedFileLinks++; }
       }
     }
-    cropOption(li, {item, key, asset, href, supporting, auth, copernicus});
+    if (authURL) protectedControls(li, {href: authURL, asset, key});
+    cropOption(li, {item, key, asset, href, supporting, auth, copernicus, authURL});
     assets.append(li);
   }
   section.append(el('p', copernicusDataLinks
-    ? 'Copernicus downloads require sign-in. Open the dataset in the official Copernicus STAC browser, log in, and expand the named asset. Select HTTPS if offered, then Download. Opening the raw API URL alone returns 401 Unauthorized. Files contain the full asset, not a study-area clip.'
+    ? copernicusSession.loaded
+      ? 'Your token is loaded. Check each supported asset, save its original file, or clip a supported TIFF with the study bbox. Loading does not verify access. Provider download links remain available if an action is unavailable or fails; NetCDF is original-only.'
+      : 'Copernicus downloads require sign-in. Open the dataset in the official Copernicus STAC browser, log in, and expand the named asset. Select HTTPS if offered, then Download. Opening the raw API URL alone returns 401 Unauthorized. Files contain the full asset, not a study-area clip.'
     : fileLinks
     ? `${fileLinks === restrictedFileLinks ? 'These data links require provider authentication.' : 'Choose a file below.'} Files open at the provider; if displayed, use your browser’s Save option. Downloads contain the full asset, not a study-area clip.`
-    : 'No browser-downloadable data file is advertised. Check the asset instructions and Source links below for provider access.', 'download-help'));
+    : 'No browser-downloadable data file is advertised. Check the asset instructions and Source links below for provider access.', 'download-help session-download-help'));
   if (copernicusLinks) {
     if (!copernicusDataLinks) section.append(el('p', 'Copernicus supporting files require sign-in. Open them in the provider browser and follow the instructions beside each file.', 'download-help'));
     const help = el('p', null, 'download-help');
@@ -322,7 +414,7 @@ function datasetDownloads(item) {
   return section;
 }
 function select(item, button) {
-  cancelCrop(); cropSelection++;
+  cancelCrop(); cropSelection++; selectedItem = item;
   footprints.eachLayer(layer => layer.setStyle({color: '#386a4e', weight: 1.7, fillOpacity: 0}));
   const layer = itemLayers.get(item);
   if (layer) { layer.setStyle({color: '#b56c28', weight: 3, fillOpacity: .12}); layer.bringToFront(); if (layer.getBounds().isValid()) map.fitBounds(layer.getBounds(), {maxZoom: 9, padding: [20, 20]}); }

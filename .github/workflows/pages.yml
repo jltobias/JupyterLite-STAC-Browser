@@ -24,7 +24,7 @@ jobs:
       - run: pip install -r requirements.txt
       - run: python -m playwright install --with-deps chromium
       - run: python -m unittest discover -s tests -p 'test_*.py' -v
-      - run: node --test tests/test_stac.mjs
+      - run: node --test tests/test_stac.mjs tests/test_copernicus_session.mjs
       - run: python tests/raster_clip_check.py
       - run: python scripts/build.py --base-url /${{ github.event.repository.name }}
       - run: python tests/browser_check.py --base-path /${{ github.event.repository.name }}

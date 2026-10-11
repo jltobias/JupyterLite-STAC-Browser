@@ -245,14 +245,30 @@ print('Spatial replay passed: bbox, polygon, none')
                         protected.update(id='synthetic-nc', collection='clms_ndvi_global_300m_10daily_v2_nc')
                         item_path = 'collections/clms_ndvi_global_300m_10daily_v2_nc/items/synthetic-nc'
                         protected['links'] = [{'rel': 'self', 'href': 'https://stac.dataspace.copernicus.eu/v1/' + item_path}]
-                        protected['assets'] = {'ndvi': {'href': 'https://download.dataspace.copernicus.eu/odata/v1/Products(fixture)/Nodes(file.nc)/$value', 'roles': ['data']}}
+                        protected_root = 'https://download.dataspace.copernicus.eu/odata/v1/Products(ccf70f3b-7b04-41f9-ade5-1443a085748e)'
+                        nc_url = protected_root + '/Nodes(file.nc)/$value'
+                        tiff_url = protected_root + '/Nodes(file.tiff)/$value'
+                        protected['assets'] = {'ndvi': {'href': nc_url, 'roles': ['data']}}
+                        iframe_token = 'synthetic-iframe-access-token'
+                        nc_bytes = b'CDF\x01\x00\xff\x80exact-original-iframe-NetCDF-bytes'
+                        protected_requests = []
                         def protected_fixture(route):
+                            assert 'authorization' not in route.request.headers
                             data = {'type': 'FeatureCollection', 'features': [protected], 'links': []} if '/search' in route.request.url else {**catalog, 'links': [{'rel': 'search', 'href': './search'}]}
                             route.fulfill(body=json.dumps(data), content_type='application/json', headers={'Access-Control-Allow-Origin': '*'})
+                        def protected_asset(route):
+                            assert route.request.url in (nc_url, tiff_url)
+                            assert route.request.headers.get('authorization') == 'Bearer ' + iframe_token
+                            protected_requests.append(route.request.headers.get('range'))
+                            if route.request.url == tiff_url:
+                                fulfill_raster(route)
+                            else:
+                                route.fulfill(body=nc_bytes, content_type='application/x-netcdf', headers={'Access-Control-Allow-Origin': '*'})
                         def browser_fixture(route):
                             route.fulfill(content_type='text/html', body='<h1>Synthetic provider login</h1>')
                         context.route('https://iframe-copernicus.test/**', protected_fixture)
                         context.route('https://browser.stac.dataspace.copernicus.eu/**', browser_fixture)
+                        context.route('https://download.dataspace.copernicus.eu/**', protected_asset)
                         frame.locator('#preset').select_option('custom')
                         frame.locator('#endpoint').fill('https://iframe-copernicus.test/')
                         frame.locator('#connect').click()
@@ -265,9 +281,36 @@ print('Spatial replay passed: bbox, polygon, none')
                         popup = opened.value
                         expect(popup.locator('h1')).to_have_text('Synthetic provider login')
                         popup.close()
+                        frame.locator('.copernicus-connection').evaluate('element => { element.open = true; window.showSaveFilePicker = undefined; }')
+                        frame.locator('#copernicus-token').fill(iframe_token)
+                        frame.locator('#copernicus-load').click()
+                        expect(frame.locator('#copernicus-token')).to_have_value('')
+                        expect(frame.locator('#copernicus-status')).to_contain_text('not verified')
+                        assert not protected_requests
+                        with page.expect_download() as original_nc:
+                            frame.locator('.asset-original').click()
+                        assert original_nc.value.suggested_filename == 'file.nc'
+                        assert Path(original_nc.value.path()).read_bytes() == nc_bytes
+                        protected.update(id='synthetic-auth-tiff', collection='session-fixture')
+                        protected['assets'] = {'data': {'href': tiff_url, 'roles': ['data'], 'type': 'image/tiff'}}
+                        frame.locator('#search').click()
+                        frame.locator('.result-card').first.click()
+                        frame.locator('.asset-check').click()
+                        expect(frame.locator('.protected-status')).to_contain_text('exactly 16 bytes')
+                        frame.locator('#bbox').fill(','.join(map(str, BBOX)))
+                        frame.locator('#bbox').press('Tab')
+                        with page.expect_download() as authenticated_crop:
+                            frame.locator('.asset-clip').click()
+                        crop_bytes = Path(authenticated_crop.value.path()).read_bytes()
+                        verify_crop(ATTACHMENT, crop_bytes)
+                        assert iframe_token.encode() not in crop_bytes
+                        frame.locator('#copernicus-clear').click()
+                        expect(frame.locator('#copernicus-status')).to_contain_text('Session cleared')
+                        expect(frame.locator('.asset-check')).to_have_count(0)
                         context.unroute('https://iframe-copernicus.test/**', protected_fixture)
                         context.unroute('https://browser.stac.dataspace.copernicus.eu/**', browser_fixture)
-                        print('Embedded Copernicus sign-in handoff passed', flush=True)
+                        context.unroute('https://download.dataspace.copernicus.eu/**', protected_asset)
+                        print('Embedded Copernicus handoff, session token, original NetCDF and authenticated worker crop passed', flush=True)
                     print("Embedded map displayed " + ("synthetic fixture results" if args.fixtures else "live WorldPop results"), flush=True)
                 page.screenshot(path=str(results / (notebook.replace(".ipynb", "") + ".png")))
                 print(f"PASS {notebook}: {expected}", flush=True)

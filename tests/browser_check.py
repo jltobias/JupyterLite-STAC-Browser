@@ -12,6 +12,7 @@ from playwright.sync_api import sync_playwright, expect
 from study_area_check import check_study_area
 from directory_check import check_directory, check_deafrica
 from download_check import check_downloads
+from copernicus_session_check import check_copernicus_session
 
 ROOT = Path(__file__).resolve().parents[1]
 CATALOG = json.loads((ROOT / "tests/fixtures/catalog.json").read_text(encoding="utf-8"))
@@ -375,6 +376,7 @@ def main():
             check_deafrica(page, calls)
             check_directory(page, calls, pending_connections, CATALOG)
             check_downloads(page, CATALOG, ITEMS)
+            check_copernicus_session(page, CATALOG, ITEMS['features'][0])
             page.set_viewport_size({"width": 390, "height": 844})
             assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
             output = ROOT / "test-results"
