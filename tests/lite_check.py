@@ -139,6 +139,8 @@ print('Spatial replay passed: bbox, polygon, none')
                 page.get_by_text("Run", exact=True).first.click()
                 page.get_by_text("Run All Cells", exact=True).click()
                 deadline = time.monotonic() + 240
+                startup_retry_at = time.monotonic() + 20
+                retried_idle_startup = False
                 while True:
                     # A fresh deployed origin can ask for its kernel after Run
                     # All, before producing any outputs. Complete that real UI.
@@ -150,6 +152,16 @@ print('Spatial replay passed: bbox, polygon, none')
                     assert not errors, f"{notebook}: {errors}"
                     outputs = page.locator(".jp-NotebookPanel:visible .jp-OutputArea-output").all_text_contents()
                     assert not any('Traceback (most recent call last)' in output for output in outputs), (notebook, outputs)
+                    # On a fresh deployed origin, first-run kernel startup can
+                    # leave the initial Run All command unexecuted. Retry once
+                    # only when it is idle and has produced no output/errors.
+                    if (not outputs and not retried_idle_startup
+                            and time.monotonic() >= startup_retry_at
+                            and '| Idle' in page.locator('.jp-StatusBar-Widget').inner_text()):
+                        print('Kernel ready; resubmitting unexecuted Run All Cells', flush=True)
+                        page.get_by_text("Run", exact=True).first.click()
+                        page.get_by_text("Run All Cells", exact=True).click()
+                        retried_idle_startup = True
                     if any(expected in output for output in outputs):
                         break
                     if time.monotonic() > deadline:
