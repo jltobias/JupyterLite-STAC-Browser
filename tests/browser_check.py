@@ -13,6 +13,7 @@ from study_area_check import check_study_area
 from directory_check import check_directory, check_deafrica
 from download_check import check_downloads
 from copernicus_session_check import check_copernicus_session
+from catalog_compatibility_check import check_catalog_compatibility
 
 ROOT = Path(__file__).resolve().parents[1]
 CATALOG = json.loads((ROOT / "tests/fixtures/catalog.json").read_text(encoding="utf-8"))
@@ -86,7 +87,13 @@ def main():
                     else:
                         data = {"type": "FeatureCollection", "features": [{**ITEMS["features"][1], "id": "unfiltered-item", "collection": "OTHER"}], "links": []}
                 elif path == "/page2":
-                    data = {"type": "FeatureCollection", "features": [ITEMS["features"][0], {**ITEMS["features"][1], "id": "synthetic-3"}], "links": []}
+                    updated = copy.deepcopy(ITEMS["features"][0])
+                    updated['properties'].update(title='Updated selected item', year=2021)
+                    updated['assets']['data']['href'] = './updated-data.tif'
+                    updated['geometry'] = {'type': 'Polygon', 'coordinates': [[[30, 0], [31, 0], [31, 1], [30, 1], [30, 0]]]}
+                    data = {"type": "FeatureCollection", "features": [updated, {**ITEMS["features"][1], "id": "synthetic-3"}], "links": [{'rel': 'next', 'href': './page3'}]}
+                elif path == '/page3':
+                    data = {'type': 'FeatureCollection', 'features': [{**ITEMS['features'][1], 'id': 'synthetic-4'}], 'links': []}
                 elif path == "/static.json":
                     data = {**CATALOG, "links": [{"rel": "item", "href": "./item.json", "title": "Synthetic static item"}]}
                 elif path == "/collection.json":
@@ -223,16 +230,50 @@ def main():
             assert page.locator("#metadata a").first.get_attribute("href").endswith("/items/data.tif")
             assert page.locator("#metadata").get_by_role("link", name="self", exact=True).get_attribute("href").endswith("/items/synthetic-1.json")
             expect(page.locator("#metadata")).to_contain_text("Fixture provider")
+            def failed_page(route):
+                route.fulfill(status=503, body='{}', content_type='application/json', headers={'Access-Control-Allow-Origin': '*'})
+            page.route('**/page2', failed_page)
+            page.locator('#more').click()
+            expect(page.locator('#status')).to_contain_text('HTTP 503')
+            expect(page.locator('.result-card')).to_have_count(2)
+            expect(page.locator('.result-card.selected')).to_have_count(1)
+            expect(page.locator('#metadata')).to_contain_text('Synthetic population project')
+            assert coverage.first.get_attribute('fill-opacity') == '0.12'
+            page.unroute('**/page2', failed_page)
             page.locator("#more").click()
             expect(page.locator(".result-card")).to_have_count(3)
             assert calls[-1]["method"] == "POST" and json.loads(calls[-1]["body"])["token"] == "second"
-            page.locator(".result-card").first.click()
-            assert page.locator("#metadata a").first.get_attribute("href").endswith("/items/data.tif")
+            expect(page.locator('.result-card.selected')).to_have_count(1)
+            expect(page.locator('.result-card.selected')).to_contain_text('Updated selected item')
+            expect(page.locator('#metadata h3').first).to_have_text('Updated selected item')
+            expect(page.locator('#metadata dl')).to_contain_text('2021')
+            assert coverage.first.get_attribute('fill-opacity') == '0.12'
+            assert page.locator("#metadata a").first.get_attribute("href").endswith("/items/updated-data.tif")
+            with page.expect_download() as item_download:
+                page.locator('.metadata-download').click()
+            selected_export = json.loads(Path(item_download.value.path()).read_text())
+            assert selected_export['properties']['title'] == 'Updated selected item'
+            assert selected_export['assets']['data']['href'] == './updated-data.tif'
             for button, expected in [("#export-geojson", "FeatureCollection"), ("#export-query", None)]:
                 with page.expect_download() as download_info:
                     page.locator(button).click()
                 data = json.loads(Path(download_info.value.path()).read_text())
                 assert data["type"] == expected if expected else data["count"] == 3
+                if expected:
+                    assert data['features'][0]['properties'] == selected_export['properties']
+                    assert data['features'][0]['geometry'] == selected_export['geometry']
+                    assert data['features'][0]['assets']['data']['href'].endswith('/items/updated-data.tif')
+            retained_metadata = page.locator('#metadata').inner_html()
+            page.evaluate("""() => { window.auditRefits = 0; window.auditFitBounds = previewMap.fitBounds;
+                previewMap.fitBounds = function(...args) { window.auditRefits++; return window.auditFitBounds.apply(this, args); }; }""")
+            page.locator('#more').click()
+            expect(page.locator('.result-card')).to_have_count(4)
+            expect(page.locator('.result-card.selected')).to_have_count(1)
+            expect(page.locator('.result-card.selected')).to_contain_text('Updated selected item')
+            assert coverage.first.get_attribute('fill-opacity') == '0.12'
+            assert page.locator('#metadata').inner_html() == retained_metadata
+            assert page.evaluate('window.auditRefits') == 0
+            page.evaluate('() => { previewMap.fitBounds = window.auditFitBounds; delete window.auditFitBounds; delete window.auditRefits; }')
             page.locator("#search").click()
             expect(page.locator("#metadata")).to_contain_text("Select one of the new results")
             page.locator("#bbox").fill("180,0,-180,10")
@@ -374,6 +415,7 @@ def main():
             exported = json.loads(Path(download_info.value.path()).read_text())
             assert exported["features"][0]["assets"] == COPERNICUS_ITEM["assets"]
             check_deafrica(page, calls)
+            check_catalog_compatibility(page, CATALOG, ITEMS)
             check_directory(page, calls, pending_connections, CATALOG)
             check_downloads(page, CATALOG, ITEMS)
             check_copernicus_session(page, CATALOG, ITEMS['features'][0])

@@ -141,6 +141,10 @@ const itemKey = item => JSON.stringify([typeof item.collection === 'string' ? it
 function links(doc, rel) {
   return (Array.isArray(doc?.links) ? doc.links : []).filter(link => record(link) && (!rel || link.rel === rel) && typeof link.href === 'string');
 }
+function jsonLink(link) {
+  return link.type == null || link.type === '' || (typeof link.type === 'string' &&
+    /^application\/(?:[^\s/;]+\+)?json$/.test(link.type.split(';')[0].trim().toLowerCase()));
+}
 function uniqueCollections(collections) {
   return [...new Map(collections.filter(c => record(c) && typeof c.id === 'string' && c.id.length).map(c => [c.id, c])).values()].slice(0, 1000);
 }
@@ -174,9 +178,10 @@ export class STACClient {
     const result = await this.request(request);
     validRoot(result.data);
     const root = result.data, rootURL = result.url;
-    const searchLink = links(root, 'search').find(l => String(l.method || 'GET').toUpperCase() === 'GET') || links(root, 'search').find(l => String(l.method).toUpperCase() === 'POST');
+    const searchLinks = links(root, 'search').filter(jsonLink);
+    const searchLink = searchLinks.find(l => String(l.method || 'GET').toUpperCase() === 'GET') || searchLinks.find(l => String(l.method).toUpperCase() === 'POST');
     let collections = uniqueCollections(root.type === 'Collection' ? [root] : []), collectionNext = null;
-    const collectionLink = links(root, 'data').find(l => !l.type || (typeof l.type === 'string' && l.type.includes('json')));
+    const collectionLink = links(root, 'data').find(jsonLink);
     if (collectionLink) {
       const req = {url: safeURL(collectionLink.href, rootURL, true), method: 'GET'};
       // CDSE defaults to 10 collections per page; request our bounded list in one page.
@@ -184,7 +189,8 @@ export class STACClient {
       const result = await this.request(req);
       if (!Array.isArray(result.data?.collections)) throw new Error('The advertised collections link did not return a collections array.');
       collections = uniqueCollections(result.data.collections);
-      collectionNext = collections.length < 1000 && links(result.data, 'next')[0] ? nextRequest(links(result.data, 'next')[0], {...req, url: result.url}) : null;
+      const next = links(result.data, 'next').find(jsonLink);
+      collectionNext = collections.length < 1000 && next ? nextRequest(next, {...req, url: result.url}) : null;
     }
     Object.assign(this, {root, url: rootURL, searchLink, collections, collectionNext});
     return this.root;
@@ -194,7 +200,8 @@ export class STACClient {
     const req = this.collectionNext, result = await this.request(req);
     if (!Array.isArray(result.data?.collections)) throw new Error('Invalid collections page.');
     const collections = uniqueCollections([...this.collections, ...result.data.collections]);
-    const collectionNext = collections.length < 1000 && links(result.data, 'next')[0] ? nextRequest(links(result.data, 'next')[0], {...req, url: result.url}) : null;
+    const next = links(result.data, 'next').find(jsonLink);
+    const collectionNext = collections.length < 1000 && next ? nextRequest(next, {...req, url: result.url}) : null;
     Object.assign(this, {collections, collectionNext});
   }
   async search({bbox, intersects, collection, start, end, limit = 25, studyArea = null} = {}) {
@@ -208,7 +215,7 @@ export class STACClient {
     if (collection) query.collections = [collection];
     const datetime = dateRange(start, end); if (datetime) query.datetime = datetime;
     // Polygon coordinates can exceed GET URL limits; use an advertised POST link.
-    const searchLink = intersects != null ? links(this.root, 'search').find(l => String(l.method).toUpperCase() === 'POST') || this.searchLink : this.searchLink;
+    const searchLink = intersects != null ? links(this.root, 'search').find(l => jsonLink(l) && String(l.method).toUpperCase() === 'POST') || this.searchLink : this.searchLink;
     const method = (searchLink.method || 'GET').toUpperCase();
     const url = new URL(safeURL(searchLink.href, this.url, true));
     url.hash = '';
@@ -233,15 +240,16 @@ export class STACClient {
       items.set(itemKey(item), item);
       if (items.size >= MAX_ITEMS) break;
     }
-    const link = links(data, 'next')[0];
+    const link = links(data, 'next').find(jsonLink);
     this.next = link && items.size < MAX_ITEMS ? nextRequest(link, {...req, url}) : null;
     this.items = [...items.values()];
     this.history = [...(reset ? [] : this.history), req];
     this.retrievedAt = new Date().toISOString();
   }
   async more() { if (this.next) await this.page(this.next); return this.items; }
-  catalogLinks() { return links(this.root).filter(l => ['child', 'item', 'parent', 'root'].includes(l.rel)).slice(0, 100); }
+  catalogLinks() { return links(this.root).filter(l => jsonLink(l) && ['child', 'item', 'parent', 'root'].includes(l.rel)).slice(0, 100); }
   async openItem(link) {
+    if (!jsonLink(link)) throw new Error('The item link does not advertise a JSON representation.');
     const req = {url: safeURL(link.href, this.url, true), method: 'GET'};
     const {data, url} = await this.request(req);
     if (!validItem(data) || !data.stac_version) throw new Error('Link did not return a STAC Item.');
@@ -257,8 +265,11 @@ export class STACClient {
         try { link.href = this.linkURL(item, link); } catch { /* Preserve unsupported source metadata verbatim. */ }
       }
       for (const asset of Object.values(record(copy.assets) ? copy.assets : {})) {
-        if (record(asset) && typeof asset.href === 'string') {
-          try { asset.href = safeURL(asset.href, this.baseFor(item)); } catch { /* Preserve unsupported source metadata verbatim. */ }
+        if (!record(asset)) continue;
+        const locations = [asset, ...Object.values(record(asset.alternate) ? asset.alternate : {})];
+        for (const location of locations) {
+          if (!record(location) || typeof location.href !== 'string' || !location.href.trim()) continue;
+          try { location.href = safeURL(location.href, this.baseFor(item)); } catch { /* Preserve unsupported source metadata verbatim. */ }
         }
       }
       return copy;

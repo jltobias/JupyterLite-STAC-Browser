@@ -5,13 +5,14 @@ import json
 import math
 from pathlib import Path
 import sys
+from types import ModuleType, SimpleNamespace
 import unittest
 from urllib.parse import parse_qs, urlsplit
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "notebooks"))
-from stac_browser import STACBrowser, PRESETS, date_range, https_url, next_request, validate_bbox, validate_polygon, explorer_url
+from stac_browser import STACBrowser, PRESETS, date_range, https_url, next_request, validate_bbox, validate_polygon, explorer_url, fetch_json
 
 CATALOG = json.loads((ROOT / "tests/fixtures/catalog.json").read_text(encoding="utf-8"))
 ITEMS = json.loads((ROOT / "tests/fixtures/items.json").read_text(encoding="utf-8"))
@@ -98,6 +99,160 @@ class ValidationTests(unittest.TestCase):
 
 
 class ClientTests(unittest.IsolatedAsyncioTestCase):
+    async def test_json_representations_and_method_preferences(self):
+        polygon = {'type': 'Polygon', 'coordinates': [[[0, 0], [1, 0], [0, 1], [0, 0]]]}
+        for media in ['application/json', 'application/geo+json', 'Application/Geo+JSON; charset=utf-8', 'application/vnd.stac+json', None]:
+            calls = []
+            async def fetch(req):
+                calls.append(req)
+                path = urlsplit(req['url']).path
+                if path == '/':
+                    value = {**CATALOG, 'links': [
+                        {'rel': 'data', 'href': '/html', 'type': 'text/html'},
+                        {'rel': 'data', 'href': '/xml', 'type': 'application/xml'},
+                        {'rel': 'data', 'href': '/collections', 'type': media},
+                        {'rel': 'search', 'href': '/xml', 'type': 'application/xml', 'method': 'POST'},
+                        {'rel': 'search', 'href': '/html', 'type': 'text/html'},
+                        {'rel': 'search', 'href': '/post', 'type': media, 'method': 'POST'},
+                        {'rel': 'search', 'href': '/get', 'type': media}]}
+                elif path == '/collections':
+                    value = {'collections': [{'id': 'JSON'}]}
+                else:
+                    self.assertIn(path, ['/get', '/post'])
+                    value = {'type': 'FeatureCollection', 'features': []}
+                return value, req['url']
+            client = await STACBrowser('https://fixture.test/', fetch).connect()
+            self.assertEqual(client.collections[0]['id'], 'JSON')
+            await client.search()
+            await client.search(intersects=polygon)
+            self.assertEqual([(urlsplit(c['url']).path, c['method']) for c in calls[2:]], [('/get', 'GET'), ('/post', 'POST')])
+
+    async def test_unsupported_media_stays_unavailable_and_polygon_uses_compatible_get(self):
+        calls, supported = [], False
+        async def fetch(req):
+            calls.append(req)
+            if urlsplit(req['url']).path == '/':
+                value = {**CATALOG, 'links': [
+                    {'rel': 'data', 'href': '/html', 'type': 'text/html'},
+                    {'rel': 'search', 'href': '/html', 'type': 'text/html'},
+                    {'rel': 'search', 'href': '/xml', 'type': 'application/xml', 'method': 'POST'},
+                    *([{'rel': 'search', 'href': '/get', 'type': 'application/json'}] if supported else [])]}
+            else:
+                self.assertEqual(urlsplit(req['url']).path, '/get')
+                value = {'type': 'FeatureCollection', 'features': []}
+            return value, req['url']
+        client = await STACBrowser('https://fixture.test/', fetch).connect()
+        self.assertEqual(len(calls), 1)
+        self.assertIsNone(client.search_link)
+        with self.assertRaisesRegex(ValueError, 'Static catalog'):
+            await client.search()
+        self.assertEqual(len(calls), 1)
+        supported = True
+        await client.connect()
+        await client.search(intersects={'type': 'Polygon', 'coordinates': [[[0, 0], [1, 0], [0, 1], [0, 0]]]})
+        self.assertEqual(calls[-1]['method'], 'GET')
+
+    async def test_portable_alternates_preserve_metadata_and_each_item_base(self):
+        assets = {'data': {'href': 's3://bucket/original.tif', 'alternate': {
+            'https': {'href': '../public/data.tif', 'auth:refs': []},
+            'http': {'href': 'http://fixture.test/public.tif'}, 's3': {'href': 's3://bucket/other.tif'},
+            'unsafe': {'href': 'javascript:alert(1)'}, 'credentials': {'href': 'https://user:secret@fixture.test/private.tif'},
+            'null': None, 'text': 'malformed', 'array': [{'href': './untouched.tif'}], 'number': {'href': 123}, 'blank': {'href': ''}, 'whitespace': {'href': ' '}}},
+            'primary': {'href': './primary.tif'}, 'malformed': {'alternate': []}, 'null': None}
+        first = {**ITEMS['features'][0], 'id': 'first', 'links': [{'rel': 'self', 'href': './items/first.json'}], 'assets': assets}
+        second = {**first, 'id': 'second', 'links': []}
+        async def fetch(req):
+            path = urlsplit(req['url']).path
+            if path == '/':
+                value = {**CATALOG, 'links': [{'rel': 'search', 'href': '/one/search'}]}
+            elif path == '/one/search':
+                value = {'type': 'FeatureCollection', 'features': [first], 'links': [{'rel': 'next', 'href': '/two/search'}]}
+            else:
+                value = {'type': 'FeatureCollection', 'features': [second]}
+            return copy.deepcopy(value), req['url']
+        client = await STACBrowser('https://fixture.test/', fetch).connect()
+        await client.search()
+        await client.more()
+        exported = client.geojson()['features']
+        for index, base in enumerate(['https://fixture.test/one/', 'https://fixture.test/']):
+            expected = copy.deepcopy(assets)
+            expected['data']['alternate']['https']['href'] = base + 'public/data.tif'
+            expected['primary']['href'] = 'https://fixture.test/' + ('one/items/' if index == 0 else 'two/') + 'primary.tif'
+            self.assertEqual(exported[index]['assets'], expected)
+        self.assertEqual(client.items, [first, second])
+
+    async def test_pyodide_fetch_omits_credentials_for_get_and_post(self):
+        calls = []
+        async def json_response():
+            return CATALOG
+        async def pyfetch(url, **options):
+            calls.append((url, options))
+            return SimpleNamespace(ok=True, url=url, json=json_response)
+        module = ModuleType('pyodide.http')
+        module.pyfetch = pyfetch
+        with patch.dict(sys.modules, {'pyodide': ModuleType('pyodide'), 'pyodide.http': module}):
+            for request in [{'url': 'https://fixture.test/'}, {'url': 'https://fixture.test/search', 'method': 'POST', 'body': {'limit': 1}}]:
+                self.assertEqual(await fetch_json(request), (CATALOG, request['url']))
+        for _, options in calls:
+            self.assertEqual(options['credentials'], 'omit')
+            self.assertNotIn('Authorization', options['headers'])
+        self.assertEqual(json.loads(calls[1][1]['body']), {'limit': 1})
+
+    async def test_pagination_and_static_links_choose_json_preserving_limits_and_requests(self):
+        def mixed(rel, href, **extra):
+            return [{'rel': rel, 'href': '/html', 'type': 'text/html'},
+                    {'rel': rel, 'href': '/xml', 'type': 'application/xml'},
+                    {'rel': rel, 'href': href, 'type': 'application/geo+json', **extra}]
+        calls = []
+        async def fetch(req):
+            calls.append(copy.deepcopy(req))
+            path = urlsplit(req['url']).path
+            if path == '/':
+                data = CATALOG
+            elif path == '/collections':
+                data = {'collections': [{'id': 'one'}], 'links': mixed('next', '/collections2', method='POST', body={'cursor': 2})}
+            elif path == '/collections2':
+                data = {'collections': [{'id': 'two'}], 'links': mixed('next', '/collections3', method='POST', merge=True, body={'cursor': 3})}
+            elif path == '/collections3':
+                data = {'collections': [{'id': 'three'}], 'links': [{'rel': 'next', 'href': '/html', 'type': 'text/html'}]}
+            elif path == '/search':
+                data = {'type': 'FeatureCollection', 'features': [ITEMS['features'][0]], 'links': mixed('next', '/page2', method='POST', body={'cursor': 2})}
+            elif path == '/page2':
+                data = {'type': 'FeatureCollection', 'features': [ITEMS['features'][1]], 'links': [{'rel': 'next', 'href': '/xml', 'type': 'application/xml'}]}
+            elif path == '/static':
+                data = {**CATALOG, 'links': [link for rel in ['child', 'item', 'parent', 'root'] for link in mixed(rel, '/' + rel)]}
+            elif path == '/item':
+                data = ITEMS['features'][0]
+            elif path in ['/child', '/parent', '/root']:
+                data = {**CATALOG, 'links': []}
+            elif path == '/capped-static':
+                data = {**CATALOG, 'links': [{'rel': 'child', 'href': '/html', 'type': 'text/html'}] * 120 +
+                        [{'rel': 'child', 'href': '/child' + str(i)} for i in range(101)]}
+            else:
+                self.fail('Unexpected representation: ' + path)
+            return copy.deepcopy(data), req['url']
+        client = await STACBrowser('https://fixture.test/', fetch).connect()
+        await client.more_collections()
+        await client.more_collections()
+        self.assertEqual([c['id'] for c in client.collections], ['one', 'two', 'three'])
+        self.assertIsNone(client.collection_next)
+        self.assertEqual(calls[-1], {'url': 'https://fixture.test/collections3', 'method': 'POST', 'body': {'cursor': 3}})
+        await client.search()
+        await client.more()
+        self.assertIsNone(client.next)
+        self.assertEqual(calls[-1], {'url': 'https://fixture.test/page2', 'method': 'POST', 'body': {'cursor': 2}})
+        await client.connect('https://fixture.test/static')
+        self.assertEqual([link['rel'] for link in client.browse_links()], ['child', 'item', 'parent', 'root'])
+        for link in client.browse_links():
+            await client.open_link(link)
+        before = len(calls)
+        with self.assertRaisesRegex(ValueError, 'JSON representation'):
+            await client.open_link({'rel': 'item', 'href': '/html', 'type': 'text/html'})
+        self.assertEqual(len(calls), before)
+        await client.connect('https://fixture.test/capped-static')
+        self.assertEqual(len(client.browse_links()), 100)
+        self.assertEqual(client.browse_links()[0]['href'], '/child0')
+
     async def test_polygon_post_and_capture_before_response(self):
         started, release = asyncio.Event(), asyncio.Event()
         calls = []

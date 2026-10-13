@@ -109,6 +109,26 @@ def check_downloads(page, catalog, items):
         assert json.loads(Path(result.value.path()).read_text(encoding='utf-8')) == item
         assert len(asset_requests) == 1
 
+    # An alternate declares its own auth requirements; absent refs inherit the primary.
+    for alternate_auth, restricted_alternate in [({'auth:refs': []}, False), ({}, True), ({'auth:refs': ['signing']}, True)]:
+        item['assets'] = {'data': {'href': 's3://fixture/restricted.tif', 'type': 'image/tiff', 'auth:refs': ['signing'],
+                                  'alternate': {'https': {'href': './public.tif', **alternate_auth}}}}
+        select()
+        expect(section.locator('.asset-download')).to_have_attribute('href', host + '/items/public.tif')
+        expect(section.locator('.asset-clip')).to_have_count(0 if restricted_alternate else 1)
+        if restricted_alternate:
+            expect(section).to_contain_text('Provider authentication required')
+            expect(section).to_contain_text('Obtain a signed URL from the provider.')
+        else:
+            expect(section).not_to_contain_text('Provider authentication required')
+        with page.expect_download() as result:
+            page.locator('#export-geojson').click()
+        exported = json.loads(Path(result.value.path()).read_text())['features'][0]['assets']['data']
+        assert exported['href'] == 's3://fixture/restricted.tif'
+        assert exported['alternate']['https']['href'] == host + '/items/public.tif'
+        assert item['assets']['data']['alternate']['https']['href'] == './public.tif'
+    assert len(asset_requests) == 1
+
     # COG HTTPS alternatives and direct NetCDF OData URLs must use provider sign-in.
     protected_requests = []
     provider_root = 'https://browser.stac.dataspace.copernicus.eu/'
@@ -126,8 +146,8 @@ def check_downloads(page, catalog, items):
         api_url = f'https://download.dataspace.copernicus.eu/odata/v1/Products(ccf70f3b-7b04-41f9-ade5-1443a085748e)/Nodes({product})/Nodes(file.{"tiff" if format == "cog" else "nc"})/$value'
         item.update(id=product, collection=collection, links=[{'rel': 'self', 'href': 'https://stac.dataspace.copernicus.eu/v1/' + path}])
         item['properties']['datetime'] = '2025-12-21T00:00:00Z'
-        # Deliberately omit auth:refs for one variant: the known protected endpoint is sufficient.
-        item['assets'] = {'qflag': {'href': 's3://fixture/file.tiff', 'title': 'Quality Flag on Normalized Difference Vegetation Index', 'alternate': {'https': {'href': api_url}}, 'roles': ['data']}} if format == 'cog' else {'ndvi': {'href': api_url, 'roles': ['data'], 'auth:refs': ['oidc']}}
+        # Even an explicit empty alternate auth list cannot bypass the known protected endpoint.
+        item['assets'] = {'qflag': {'href': 's3://fixture/file.tiff', 'title': 'Quality Flag on Normalized Difference Vegetation Index', 'alternate': {'https': {'href': api_url, 'auth:refs': []}}, 'roles': ['data']}} if format == 'cog' else {'ndvi': {'href': api_url, 'roles': ['data'], 'auth:refs': ['oidc']}}
         if format == 'cog':
             item['assets']['Product'] = {'href': api_url.split('/Nodes(')[0] + '/$value', 'title': 'Zipped product', 'roles': ['data', 'archive']}
         select()

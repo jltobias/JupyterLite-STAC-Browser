@@ -173,6 +173,24 @@ def check_study_area(page, calls):
     page.locator('#apply-vertices').click()
     expect(page.locator('#vertices')).to_have_attribute('aria-invalid', 'true')
     assert geometry() == valid
+    previous_export = exported()
+    for mode in ['bbox', 'polygon']:
+        if page.locator('#spatial-mode').input_value() != mode:
+            page.locator('#spatial-mode').select_option(mode)
+        page.locator('#search').click()
+        expect(page.locator('#status')).to_contain_text('Correct or discard invalid polygon coordinates')
+        assert request_count() == before and exported() == previous_export
+    page.locator('#spatial-mode').select_option('none')
+    page.locator('#search').click()
+    expect(page.locator('#search')).to_be_enabled()
+    before += 1
+    assert request_count() == before
+    assert 'bbox' not in last_query() and 'intersects' not in last_query()
+    # Restore the accepted polygon before continuing pointer checks.
+    page.locator('#spatial-mode').select_option('bbox')
+    page.locator('#vertices').fill('\n'.join(','.join(map(str, p)) for p in valid['coordinates'][0][:-1]))
+    page.locator('#apply-vertices').click()
+    assert geometry() == valid
     # A real pointer drag crosses the opposite edge; rollback survives Geoman's event order.
     page.locator('#zoom-area').click()
     handle = page.locator('#map .marker-icon:not(.marker-icon-middle)').first
@@ -284,6 +302,13 @@ def check_study_area(page, calls):
     page.locator('#spatial-mode').select_option('polygon')
     expect(page.locator('#result-context')).to_contain_text('completed search')
     assert exported() == saved
+
+    # Submission without a change/blur must never reuse the previous geometry.
+    applied_bbox = page.locator('#bbox').input_value()
+    page.evaluate("() => { document.querySelector('#bbox').value = '1,2,3,4'; document.querySelector('#search-form').requestSubmit(); }")
+    expect(page.locator('#status')).to_contain_text('Apply a valid study bounding box before searching')
+    assert request_count() == before and exported() == saved
+    page.locator('#bbox').evaluate('(el, value) => { el.value = value; }', applied_bbox)
 
     def fail(route):
         route.fulfill(status=503, body='{}', content_type='application/json', headers={'Access-Control-Allow-Origin': '*'})

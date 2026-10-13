@@ -8,6 +8,7 @@ project:
     - file: index.md
     - file: setup.md
     - file: exploration.md
+    - file: catalog-compatibility.md
     - title: Executable tutorials
       children:
         - file: 01_launch_map.ipynb

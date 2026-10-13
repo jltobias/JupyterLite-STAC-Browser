@@ -130,7 +130,11 @@ def check_crop_downloads(page, catalog, original):
             return
         if '/search' in route.request.url:
             searches.append(route.request.url)
-            data = {'type': 'FeatureCollection', 'features': [item], 'links': []}
+            data = {'type': 'FeatureCollection', 'features': [item], 'links': [{'rel': 'next', 'href': host + '/page2'}]}
+        elif route.request.url.endswith('/page2'):
+            updated = copy.deepcopy(item)
+            updated['properties']['title'] = 'Refreshed raster metadata'
+            data = {'type': 'FeatureCollection', 'features': [updated], 'links': []}
         elif route.request.url.endswith('/slow-item.json'):
             static_pending.append(route)
             return
@@ -176,7 +180,7 @@ def check_crop_downloads(page, catalog, original):
     assert len(downloads) == 2
     # Hold a real worker request; Cancel, bbox editing and Item selection must
     # terminate it without a stale attachment. The map remains interactive.
-    for action in ['cancel', 'bbox', 'item', 'draw', 'static']:
+    for action in ['cancel', 'bbox', 'item', 'draw', 'pagination', 'static']:
         mode[0] = 'pending'
         with page.expect_event('worker') as started:
             page.locator('.asset-clip').click()
@@ -196,10 +200,15 @@ def check_crop_downloads(page, catalog, original):
                 page.locator('#draw-area').click()
             elif action == 'static':
                 page.get_by_role('button', name='item · Delayed static Item', exact=True).click()
+            elif action == 'pagination':
+                page.locator('#more').click()
             else:
                 page.locator('.result-card').click()
         if action == 'draw':
             page.locator('#cancel-draw').click()
+        if action == 'pagination':
+            expect(page.locator('#metadata h3').first).to_have_text('Refreshed raster metadata')
+            expect(page.locator('.result-card.selected')).to_contain_text('Refreshed raster metadata')
         if action == 'static':
             # Keep the new Item unresolved while proving the old crop is gone.
             page.wait_for_timeout(100)

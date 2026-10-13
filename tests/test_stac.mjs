@@ -10,6 +10,127 @@ const item = (id, extra = {}) => ({type: 'Feature', id, stac_version: '1.0.0', p
 const page = (features, links = []) => ({type: 'FeatureCollection', features, links});
 const fetcher = handler => async (url, options) => ({ok: true, url, json: async () => structuredClone(await handler(new URL(url), options))});
 
+test('mixed representations select JSON data and searches with GET and polygon POST preferences', async () => {
+  const polygon = {type: 'Polygon', coordinates: [[[0, 0], [1, 0], [0, 1], [0, 0]]]};
+  for (const media of ['application/json', 'application/geo+json', 'Application/Geo+JSON; charset=utf-8', 'application/vnd.stac+json', undefined]) {
+    const calls = [];
+    const client = new STACClient(fetcher((url, options) => {
+      calls.push({path: url.pathname, method: options.method});
+      if (url.pathname === '/') return {...root, links: [
+        {rel: 'data', href: '/html', type: 'text/html'},
+        {rel: 'data', href: '/xml', type: 'application/xml'},
+        {rel: 'data', href: '/collections', type: media},
+        {rel: 'search', href: '/xml', type: 'application/xml', method: 'POST'},
+        {rel: 'search', href: '/html', type: 'text/html'},
+        {rel: 'search', href: '/post', type: media, method: 'POST'},
+        {rel: 'search', href: '/get', type: media},
+      ]};
+      if (url.pathname === '/collections') return {collections: [{id: 'JSON'}]};
+      assert.ok(['/get', '/post'].includes(url.pathname));
+      return page([]);
+    }));
+    await client.connect('https://fixture.test/');
+    assert.equal(client.collections[0].id, 'JSON');
+    await client.search();
+    await client.search({intersects: polygon});
+    assert.deepEqual(calls.slice(2), [{path: '/get', method: 'GET'}, {path: '/post', method: 'POST'}]);
+  }
+});
+
+test('unsupported representations stay unavailable and incompatible POST never replaces compatible GET', async () => {
+  let supported = false, calls = 0;
+  const client = new STACClient(fetcher(url => {
+    calls++;
+    if (url.pathname === '/') return {...root, links: [
+      {rel: 'data', href: '/html', type: 'text/html'},
+      {rel: 'search', href: '/html', type: 'text/html'},
+      {rel: 'search', href: '/xml', type: 'application/xml', method: 'POST'},
+      ...(supported ? [{rel: 'search', href: '/get', type: 'application/json'}] : []),
+    ]};
+    assert.equal(url.pathname, '/get');
+    return page([]);
+  }));
+  await client.connect('https://fixture.test/');
+  assert.equal(calls, 1);
+  assert.ok(!client.searchLink);
+  await assert.rejects(client.search(), /Static catalog/);
+  assert.equal(calls, 1);
+  supported = true;
+  await client.connect('https://fixture.test/');
+  await client.search({intersects: {type: 'Polygon', coordinates: [[[0, 0], [1, 0], [0, 1], [0, 0]]]}});
+  assert.equal(client.history[0].method, 'GET');
+});
+
+test('portable alternate exports resolve original item bases and preserve unsupported metadata', async () => {
+  const assets = {data: {href: 's3://bucket/original.tif', alternate: {
+    https: {href: '../public/data.tif', 'auth:refs': []},
+    http: {href: 'http://fixture.test/public.tif'}, s3: {href: 's3://bucket/other.tif'},
+    unsafe: {href: 'javascript:alert(1)'}, credentials: {href: 'https://user:secret@fixture.test/private.tif'},
+    null: null, text: 'malformed', array: [{href: './untouched.tif'}], number: {href: 123}, blank: {href: ''}, whitespace: {href: ' '},
+  }}, primary: {href: './primary.tif'}, malformed: {alternate: []}, null: null};
+  const original = item('first', {links: [{rel: 'self', href: './items/first.json'}], assets});
+  const second = item('second', {assets});
+  const client = new STACClient(fetcher(url => {
+    if (url.pathname === '/') return {...root, links: [{rel: 'search', href: '/one/search'}]};
+    if (url.pathname === '/one/search') return page([original], [{rel: 'next', href: '/two/search'}]);
+    return page([second]);
+  }));
+  await client.connect('https://fixture.test/'); await client.search(); await client.more();
+  const exported = client.geojson().features;
+  for (const [i, base] of ['https://fixture.test/one/', 'https://fixture.test/'].entries()) {
+    const expected = structuredClone(assets);
+    expected.data.alternate.https.href = base + 'public/data.tif';
+    expected.primary.href = i === 0 ? 'https://fixture.test/one/items/primary.tif' : 'https://fixture.test/two/primary.tif';
+    assert.deepEqual(exported[i].assets, expected);
+  }
+  assert.deepEqual(client.items, [original, second]);
+});
+
+test('pagination and static navigation skip HTML/XML representations while retaining requests and limits', async () => {
+  const mixed = (rel, href, extra = {}) => [
+    {rel, href: '/html', type: 'text/html'}, {rel, href: '/xml', type: 'application/xml'},
+    {rel, href, type: 'application/geo+json', ...extra},
+  ];
+  const calls = [];
+  const client = new STACClient(fetcher((url, options) => {
+    calls.push({path: url.pathname, method: options.method, body: options.body && JSON.parse(options.body)});
+    if (url.pathname === '/') return root;
+    if (url.pathname === '/collections') return {collections: [{id: 'one'}], links: mixed('next', '/collections2', {method: 'POST', body: {cursor: 2}})};
+    if (url.pathname === '/collections2') return {collections: [{id: 'two'}], links: mixed('next', '/collections3', {method: 'POST', merge: true, body: {cursor: 3}})};
+    if (url.pathname === '/collections3') return {collections: [{id: 'three'}], links: [{rel: 'next', href: '/html', type: 'text/html'}]};
+    if (url.pathname === '/search') return page([item('one')], mixed('next', '/page2', {method: 'POST', body: {cursor: 2}}));
+    if (url.pathname === '/page2') return page([item('two')], [{rel: 'next', href: '/xml', type: 'application/xml'}]);
+    if (url.pathname === '/static') return {...root, links: ['child', 'item', 'parent', 'root'].flatMap(rel => mixed(rel, '/' + rel))};
+    if (url.pathname === '/item') return item('static');
+    if (['/child', '/parent', '/root'].includes(url.pathname)) return {...root, links: []};
+    if (url.pathname === '/capped-static') return {...root, links: [
+      ...Array.from({length: 120}, () => ({rel: 'child', href: '/html', type: 'text/html'})),
+      ...Array.from({length: 101}, (_, i) => ({rel: 'child', href: '/child' + i})),
+    ]};
+    throw Error('Unexpected representation: ' + url.pathname);
+  }));
+  await client.connect('https://fixture.test/'); await client.moreCollections(); await client.moreCollections();
+  assert.deepEqual(client.collections.map(c => c.id), ['one', 'two', 'three']);
+  assert.equal(client.collectionNext, null);
+  assert.deepEqual(calls.at(-1), {path: '/collections3', method: 'POST', body: {cursor: 3}});
+  await client.search(); await client.more();
+  assert.equal(client.next, null);
+  assert.deepEqual(calls.at(-1), {path: '/page2', method: 'POST', body: {cursor: 2}});
+  await client.connect('https://fixture.test/static');
+  const navigation = client.catalogLinks();
+  assert.deepEqual(navigation.map(l => l.rel), ['child', 'item', 'parent', 'root']);
+  for (const link of navigation) {
+    if (link.rel === 'item') await client.openItem(link);
+    else await client.connect(new URL(link.href, 'https://fixture.test/static').href);
+  }
+  const before = calls.length;
+  await assert.rejects(client.openItem({href: '/html', type: 'text/html'}), /JSON representation/);
+  assert.equal(calls.length, before);
+  await client.connect('https://fixture.test/capped-static');
+  assert.equal(client.catalogLinks().length, 100);
+  assert.equal(client.catalogLinks()[0].href, '/child0');
+});
+
 test('protected Copernicus assets use the official sign-in browser and preserve item paths', () => {
   const api = 'https://stac.dataspace.copernicus.eu/v1/';
   const file = 'https://download.dataspace.copernicus.eu/odata/v1/Products(abc)/Nodes(product)/Nodes(file.tiff)/$value';

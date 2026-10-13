@@ -1,0 +1,331 @@
+{
+  "date": "2026-10-13",
+  "browser": "Chrome 155.0.8059.40",
+  "origin": "https://jltobias.github.io",
+  "source_base_commit": "563ed599a42188a4b476cfec44173e97fa06e3cc",
+  "mode": "Local web/ files at published origin; live provider requests with normal browser security. Earlier baseline run used deployed files.",
+  "source_sha256": {
+    "web/stac.js": "e5bd3fe1ee3ff575e8bb18e7884aeb5d8dba65c570be691b50e543d3b2532795",
+    "web/app.js": "6e20558e20c27fca973e0d44aa037dcabc08767e6f7ca602836b3f61e620f2eb",
+    "web/study-area.js": "3068fcd848a0e6bc01a987b25ab6e0f69ddb9d2e8d0490f0555e12ed971331d9",
+    "notebooks/stac_browser.py": "c8587753691c3149d5548d849921343b35a045589dfece19800513e576c896eb"
+  },
+  "featured": [
+    {
+      "preset": "worldpop",
+      "collection": "UGA",
+      "checks": {
+        "alphabetical": true,
+        "from_advertised_extent": true,
+        "until_today": true,
+        "collection_extent_control": true,
+        "collection_bbox": true,
+        "geojson_export": true,
+        "query_export": true,
+        "item_metadata_download": true,
+        "pagination": true,
+        "polygon_query": true,
+        "none_query": true
+      },
+      "connection": "WorldPop STAC API · 248 collections loaded",
+      "status": "Connected. Choose a collection or search all collections in this area.",
+      "collections": 248,
+      "date_defaults": {
+        "from": "2015-01-01",
+        "until": "2026-10-13"
+      },
+      "advertised_collection_defaults": {
+        "from": "2015-01-01",
+        "bbox": [
+          29.573332495039995,
+          -1.4824996580700143,
+          35.0333324732,
+          4.219166985789986
+        ],
+        "extent": "usable"
+      },
+      "collection_bbox": "29.573332495039995,-1.4824996580700143,35.0333324732,4.219166985789986",
+      "bbox_search": {
+        "count": 10,
+        "status": "10 items loaded. Select an item to inspect its assets. Another page is available."
+      },
+      "asset_links": 5,
+      "clip_controls": 2,
+      "pagination_count": 20,
+      "pagination_history_count": 2,
+      "polygon_search": {
+        "count": 10,
+        "status": "10 items loaded. Select an item to inspect its assets. Another page is available."
+      },
+      "unfiltered_search": {
+        "count": 10,
+        "status": "10 items loaded. Select an item to inspect its assets. Another page is available."
+      },
+      "outcome": "passed",
+      "page_errors": []
+    },
+    {
+      "preset": "copernicus",
+      "collection": "sentinel-2-l2a",
+      "checks": {
+        "alphabetical": true,
+        "from_advertised_extent": true,
+        "until_today": true,
+        "collection_extent_control": true,
+        "collection_bbox": true,
+        "geojson_export": true,
+        "query_export": true,
+        "item_metadata_download": true,
+        "pagination": true,
+        "polygon_query": true,
+        "none_query": true
+      },
+      "connection": "Copernicus Data Space Ecosystem (CDSE) asset-level STAC catalogue · 427 collections loaded",
+      "status": "Connected. Choose a collection or search all collections in this area.",
+      "collections": 427,
+      "date_defaults": {
+        "from": "2015-06-27",
+        "until": "2026-10-13"
+      },
+      "advertised_collection_defaults": {
+        "from": "2015-06-27",
+        "bbox": [
+          -180,
+          -90,
+          180,
+          90
+        ],
+        "extent": "usable"
+      },
+      "collection_bbox": "-180,-90,180,90",
+      "bbox_search": {
+        "count": 10,
+        "status": "10 items loaded. Select an item to inspect its assets. Another page is available."
+      },
+      "asset_links": 48,
+      "clip_controls": 0,
+      "pagination_count": 12,
+      "pagination_history_count": 2,
+      "polygon_search": {
+        "count": 10,
+        "status": "10 items loaded. Select an item to inspect its assets. Another page is available."
+      },
+      "unfiltered_search": {
+        "count": 10,
+        "status": "10 items loaded. Select an item to inspect its assets. Another page is available."
+      },
+      "outcome": "passed",
+      "page_errors": []
+    },
+    {
+      "preset": "deafrica",
+      "collection": "s2_l2a",
+      "checks": {},
+      "connection": "Connection unavailable. Check the URL or try another catalog.",
+      "status": "Browser could not reach this URL. Check network, HTTPS certificate, and provider CORS support. A static site cannot bypass CORS.",
+      "outcome": "connection unavailable",
+      "page_errors": []
+    },
+    {
+      "preset": "earthsearch",
+      "collection": "sentinel-2-l2a",
+      "checks": {
+        "alphabetical": true,
+        "from_advertised_extent": true,
+        "until_today": true,
+        "collection_extent_control": true,
+        "collection_bbox": true,
+        "geojson_export": true,
+        "query_export": true,
+        "item_metadata_download": true,
+        "pagination": true,
+        "polygon_query": true,
+        "none_query": true
+      },
+      "connection": "Earth Search by Element 84 · 9 collections loaded",
+      "status": "Connected. Choose a collection or search all collections in this area.",
+      "collections": 9,
+      "date_defaults": {
+        "from": "2015-06-27",
+        "until": "2026-10-13"
+      },
+      "advertised_collection_defaults": {
+        "from": "2015-06-27",
+        "bbox": [
+          -180,
+          -90,
+          180,
+          90
+        ],
+        "extent": "usable"
+      },
+      "collection_bbox": "-180,-90,180,90",
+      "bbox_search": {
+        "count": 10,
+        "status": "10 items loaded. Select an item to inspect its assets. Another page is available."
+      },
+      "asset_links": 19,
+      "clip_controls": 16,
+      "pagination_count": 12,
+      "pagination_history_count": 2,
+      "polygon_search": {
+        "count": 10,
+        "status": "10 items loaded. Select an item to inspect its assets. Another page is available."
+      },
+      "unfiltered_search": {
+        "count": 10,
+        "status": "10 items loaded. Select an item to inspect its assets. Another page is available."
+      },
+      "outcome": "passed",
+      "page_errors": []
+    },
+    {
+      "preset": "planetary",
+      "collection": "sentinel-2-l2a",
+      "checks": {
+        "alphabetical": true,
+        "from_advertised_extent": true,
+        "until_today": true,
+        "collection_extent_control": true,
+        "collection_bbox": true,
+        "geojson_export": true,
+        "query_export": true,
+        "item_metadata_download": true,
+        "pagination": true,
+        "polygon_query": true,
+        "none_query": true
+      },
+      "connection": "Microsoft Planetary Computer STAC API · 139 collections loaded",
+      "status": "Connected. Choose a collection or search all collections in this area.",
+      "collections": 139,
+      "date_defaults": {
+        "from": "2015-06-27",
+        "until": "2026-10-13"
+      },
+      "advertised_collection_defaults": {
+        "from": "2015-06-27",
+        "bbox": [
+          -180,
+          -90,
+          180,
+          90
+        ],
+        "extent": "usable"
+      },
+      "collection_bbox": "-180,-90,180,90",
+      "bbox_search": {
+        "count": 10,
+        "status": "10 items loaded. Select an item to inspect its assets. Another page is available."
+      },
+      "asset_links": 24,
+      "clip_controls": 16,
+      "pagination_count": 12,
+      "pagination_history_count": 2,
+      "polygon_search": {
+        "count": 10,
+        "status": "10 items loaded. Select an item to inspect its assets. Another page is available."
+      },
+      "unfiltered_search": {
+        "count": 10,
+        "status": "10 items loaded. Select an item to inspect its assets. Another page is available."
+      },
+      "outcome": "passed",
+      "page_errors": []
+    }
+  ],
+  "anonymous_assets": [
+    {
+      "provider": "worldpop",
+      "asset": "grid_l1",
+      "error": "Failed to fetch"
+    },
+    {
+      "provider": "earthsearch",
+      "asset": "red",
+      "status": 206,
+      "content_range": null,
+      "bytes": 16
+    },
+    {
+      "earthsearch_crop": {
+        "width": 9,
+        "height": 13,
+        "epsg": 32631,
+        "bytes": 1410,
+        "bounds": [
+          454380,
+          5344780,
+          454470,
+          5344910
+        ]
+      }
+    },
+    {
+      "provider": "planetary",
+      "asset": "B04",
+      "error": "Failed to fetch"
+    },
+    {
+      "provider": "copernicus",
+      "asset": "Product",
+      "status": 401,
+      "content_range": null
+    }
+  ],
+  "independent_crop_verification": {
+    "pixels_equal": true,
+    "crs_equal": true,
+    "transform_equal": true,
+    "source_item_id": "S2B_31UDP_20240613_0_L2A",
+    "source_asset": "red",
+    "crop_shape": [
+      13,
+      9
+    ],
+    "crs": "EPSG:32631",
+    "bounds": [
+      454380.0,
+      5344780.0,
+      454470.0,
+      5344910.0
+    ],
+    "sha256": "87cdd911ead4612dbd47ad999bc48cd3dfcd8a38759072f3cec046940d06a0f0"
+  },
+  "worldpop_original_download": {
+    "sample_item_id": "UGA_DUG_2030",
+    "asset": "grid_l1",
+    "bytes": 32157,
+    "shape": [
+      706,
+      547
+    ],
+    "crs": "ESRI:54009",
+    "sha256": "7aaa24850fb2b47b780454cbe3177b8271cc2bc2b5f3d9cc4e12025f203e1db5"
+  },
+  "planetary_manual_probe": {
+    "public_signing_http": 200,
+    "signed_range_server_http": 206,
+    "signed_range_server_bytes": 16,
+    "browser_result": "Blocked by browser local-address-space network policy",
+    "signed_urls_retained": false
+  },
+  "copernicus_authorized_live": "unverified; no personal token used",
+  "audit_started_utc": "2026-10-13T20:44:34.095821+00:00",
+  "audit_finished_utc": "2026-10-13T20:46:06.305125+00:00",
+  "directory_outcomes": {
+    "child search passed": 2,
+    "connected; depth cap": 3,
+    "connection failed": 39,
+    "invalid listed endpoint": 2,
+    "navigation/search failed": 2,
+    "search passed": 23,
+    "static item passed": 38,
+    "static navigation only": 17
+  },
+  "directory_totals": {
+    "sample_item": 61,
+    "valid_empty": 2,
+    "partial_static": 20,
+    "failed_or_invalid": 43
+  }
+}

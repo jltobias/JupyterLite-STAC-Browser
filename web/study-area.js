@@ -185,8 +185,10 @@ export class StudyArea {
   searchParameters() {
     if (this.drawing) throw new Error('Finish or cancel drawing before searching.');
     if (this.mode.value !== 'none') {
-      bboxValue(this.input.value);
       if (!this.geometry) throw new Error('Draw or enter a valid study area before searching.');
+      const entered = bboxValue(this.input.value), current = this.snapshot();
+      if (this.input.getAttribute('aria-invalid') === 'true' || entered.some((v, i) => v !== current.bbox[i])) throw new Error('Apply a valid study bounding box before searching.');
+      if (this.vertices.getAttribute('aria-invalid') === 'true') throw new Error('Correct or discard invalid polygon coordinates before searching.');
     }
     if (this.mode.value === 'polygon') return {intersects: polygonValue(this.geometry), studyArea: this.snapshot()};
     if (this.mode.value === 'bbox') return {bbox: geometryBBox(this.geometry), studyArea: this.snapshot()};

@@ -8,6 +8,8 @@ A map-centric, browser-only field guide for **WorldPop** and other public STAC c
 
 The [Pages workflow](https://github.com/jltobias/JupyterLite-STAC-Browser/actions/workflows/pages.yml) builds and publishes these three entry points together.
 
+**[Catalog compatibility report](https://jltobias.github.io/JupyterLite-STAC-Browser/book/catalog-compatibility)** — live checks of all five featured presets and 126 public directory listings, tested October 13, 2026. Four featured discovery workflows passed; Digital Earth Africa was unavailable. Download, CORS, signing and authentication results are reported separately. Repeat the optional live audit with `python tests/live_catalog_check.py --directory --assets` (Playwright Chromium required; use `--chrome` for an installed browser).
+
 ## Start exploring
 
 1. Open the Explorer. It connects to [WorldPop's STAC API](https://api.stac.worldpop.org).

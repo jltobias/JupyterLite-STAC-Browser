@@ -171,11 +171,14 @@ function renderResults() {
   $('results').replaceChildren(); footprints.clearLayers(); $('count').textContent = client.items.length;
   itemLayers = new WeakMap();
   $('more').hidden = !client.next;
+  let refreshedSelection;
   if (!client.items.length) $('results').append(el('p', 'No items loaded. Connect to a catalog, choose an area, and search.', 'empty'));
   for (const item of client.items) {
     const button = el('button', null, 'result-card');
     button.append(el('strong', item.properties?.title || item.id), el('small', `${item.collection || 'STAC Item'} · ${item.properties?.datetime || item.properties?.start_datetime || 'Date not specified'}`));
     button.onclick = () => select(item, button); $('results').append(button);
+    if (selectedItem && item.id === selectedItem.id &&
+        (typeof item.collection === 'string' ? item.collection : '') === (typeof selectedItem.collection === 'string' ? selectedItem.collection : '')) refreshedSelection = {item, button};
     if (item.geometry) {
       try {
         const layer = L.geoJSON(item, {pane: 'footprints', pmIgnore: true, style: {color: '#386a4e', weight: 1.7, fillColor: '#c0d981', fillOpacity: 0, className: 'result-footprint'}, pointToLayer: (_, latlng) => L.circleMarker(latlng, {pane: 'footprints', pmIgnore: true, radius: 7, color: '#386a4e', fillOpacity: 0, className: 'result-footprint'})});
@@ -184,6 +187,11 @@ function renderResults() {
         itemLayers.set(item, layer);
       } catch { /* Invalid provider geometry does not hide its metadata. */ }
     }
+  }
+  if (refreshedSelection) {
+    const {item, button} = refreshedSelection;
+    if (item !== selectedItem) select(item, button, false);
+    else highlightSelection(item, button, false);
   }
 }
 function addLink(parent, text, href, base) {
@@ -351,11 +359,12 @@ function datasetDownloads(item) {
     try { sessionAsset ||= new URL(safeURL(href)).origin === 'https://download.dataspace.copernicus.eu'; } catch { /* Unsafe links receive no session controls. */ }
     if (sessionAsset) li.dataset.sessionAsset = key;
     if (sessionAsset && !authURL) li.append(el('small', 'Token access is unavailable for this URL: it is outside the permitted Copernicus download scope. Use the official provider browser.', 'scope-unavailable'));
-    const auth = Boolean(copernicus) || [asset, access].some(value => Array.isArray(value['auth:refs']) && value['auth:refs'].length > 0);
+    const authRefs = Array.isArray(access['auth:refs']) ? access['auth:refs'] : Array.isArray(asset['auth:refs']) ? asset['auth:refs'] : [];
+    const auth = Boolean(copernicus) || authRefs.length > 0;
     if (auth) {
       if (!copernicus) otherRestrictedAssets = true;
       li.append(el('small', 'Provider authentication required'));
-      for (const ref of Array.isArray(access['auth:refs']) ? access['auth:refs'] : []) {
+      for (const ref of authRefs) {
         if (typeof ref !== 'string') continue;
         const scheme = item.properties?.['auth:schemes']?.[ref] || collection?.['auth:schemes']?.[ref];
         if (typeof scheme?.description === 'string') li.append(el('small', scheme.description));
@@ -413,12 +422,15 @@ function datasetDownloads(item) {
   section.append(metadata, el('p', 'Original STAC metadata only; dataset files are separate.', 'hint'));
   return section;
 }
-function select(item, button) {
-  cancelCrop(); cropSelection++; selectedItem = item;
+function highlightSelection(item, button, fit = true) {
   footprints.eachLayer(layer => layer.setStyle({color: '#386a4e', weight: 1.7, fillOpacity: 0}));
   const layer = itemLayers.get(item);
-  if (layer) { layer.setStyle({color: '#b56c28', weight: 3, fillOpacity: .12}); layer.bringToFront(); if (layer.getBounds().isValid()) map.fitBounds(layer.getBounds(), {maxZoom: 9, padding: [20, 20]}); }
+  if (layer) { layer.setStyle({color: '#b56c28', weight: 3, fillOpacity: .12}); layer.bringToFront(); if (fit && layer.getBounds().isValid()) map.fitBounds(layer.getBounds(), {maxZoom: 9, padding: [20, 20]}); }
   document.querySelectorAll('.result-card').forEach(n => n.classList.remove('selected')); button?.classList.add('selected');
+}
+function select(item, button, fit = true) {
+  cancelCrop(); cropSelection++; selectedItem = item;
+  highlightSelection(item, button, fit);
   const panel = $('metadata'); panel.replaceChildren(el('h3', item.properties?.title || item.id), datasetDownloads(item));
   const props = item.properties || {};
   panel.append(el('p', props.description || 'No item description supplied.'));

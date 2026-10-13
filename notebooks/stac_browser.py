@@ -5,6 +5,7 @@ No packages, accounts, proxy server, or raster downloads are required.
 import asyncio
 import copy
 import json
+import re
 from datetime import date, datetime, timezone
 from urllib.parse import parse_qsl, urljoin, urlsplit, urlunsplit, urlencode
 
@@ -121,7 +122,7 @@ async def fetch_json(request, timeout=20):
         except Exception as exc:
             raise RuntimeError(f"STAC request failed (network, HTTP, TLS, timeout, or non-JSON): {exc}") from exc
     try:
-        response = await asyncio.wait_for(pyfetch(request["url"], method=request.get("method", "GET"), headers=headers,
+        response = await asyncio.wait_for(pyfetch(request["url"], method=request.get("method", "GET"), headers=headers, credentials="omit",
                                                  **({"body": body} if body is not None else {})), timeout=timeout)
         if not response.ok:
             raise RuntimeError(f"Provider returned HTTP {response.status}. Retry or choose another catalog.")
@@ -135,8 +136,18 @@ def _links(document):
     return [link for link in values if isinstance(link, dict) and isinstance(link.get("href"), str)] if isinstance(values, list) else []
 
 
-def _link(document, relation):
-    return next((link for link in _links(document) if link.get("rel") == relation), None)
+def _link(document, relation, json_only=False):
+    return next((link for link in _links(document) if link.get("rel") == relation and (not json_only or _json_link(link))), None)
+
+
+def _json_link(link):
+    media_type = link.get("type")
+    if media_type is None or media_type == "":
+        return True
+    if not isinstance(media_type, str):
+        return False
+    media_type = media_type.split(";", 1)[0].strip().lower()
+    return re.fullmatch(r"application/(?:[^\s/;]+\+)?json", media_type) is not None
 
 
 def _collections(values):
@@ -197,11 +208,11 @@ class STACBrowser:
         document, root_url = await self.fetcher({"url": self.endpoint, "method": "GET"})
         if not isinstance(document, dict) or document.get("type") not in ("Catalog", "Collection") or not document.get("stac_version") or not isinstance(document.get("links"), list):
             raise ValueError("Expected a STAC Catalog or Collection JSON document.")
-        search_links = [l for l in _links(document) if l.get("rel") == "search" and str(l.get("method", "GET")).upper() in ("GET", "POST")]
+        search_links = [l for l in _links(document) if l.get("rel") == "search" and _json_link(l) and str(l.get("method", "GET")).upper() in ("GET", "POST")]
         search_link = next((l for l in search_links if str(l.get("method", "GET")).upper() == "GET"), search_links[0] if search_links else None)
         collections = _collections([document] if document["type"] == "Collection" else [])
         collection_next = None
-        data = _link(document, "data")
+        data = next((link for link in _links(document) if link.get("rel") == "data" and _json_link(link)), None)
         if data:
             req = {"url": https_url(data["href"], root_url), "method": "GET"}
             # CDSE defaults to 10 collections per page; request our bounded list in one page.
@@ -211,7 +222,7 @@ class STACBrowser:
             if not isinstance(page, dict) or not isinstance(page.get("collections"), list):
                 raise ValueError("Advertised collections URL did not return a collections array.")
             collections = _collections(page["collections"])
-            link = _link(page, "next")
+            link = _link(page, "next", json_only=True)
             collection_next = next_request(link, {**req, "url": response_url}) if link and len(collections) < 1000 else None
         self.root, self.url = document, root_url
         self.search_link, self.collections, self.collection_next = search_link, collections, collection_next
@@ -225,7 +236,7 @@ class STACBrowser:
         if not isinstance(page, dict) or not isinstance(page.get("collections"), list):
             raise ValueError("Invalid collections page.")
         collections = _collections(self.collections + page["collections"])
-        link = _link(page, "next")
+        link = _link(page, "next", json_only=True)
         collection_next = next_request(link, {**req, "url": url}) if link and len(collections) < 1000 else None
         self.collections, self.collection_next = collections, collection_next
         return self.collections
@@ -249,7 +260,7 @@ class STACBrowser:
         if interval:
             query["datetime"] = interval
         # Polygon coordinates can exceed GET URL limits; use an advertised POST link.
-        search_link = (next((link for link in _links(self.root) if link.get("rel") == "search"
+        search_link = (next((link for link in _links(self.root) if link.get("rel") == "search" and _json_link(link)
                             and str(link.get("method", "GET")).upper() == "POST"), self.search_link)
                        if intersects is not None else self.search_link)
         req = {"url": https_url(search_link["href"], self.url), "method": search_link.get("method", "GET").upper()}
@@ -280,7 +291,7 @@ class STACBrowser:
                 locations[key] = _item_location(item, url)
                 if len(items) >= MAX_ITEMS:
                     break
-        link = _link(page, "next")
+        link = _link(page, "next", json_only=True)
         self.next = next_request(link, {**request, "url": url}) if link and len(items) < MAX_ITEMS else None
         self.items = list(items.values())
         self._item_locations = locations
@@ -294,9 +305,11 @@ class STACBrowser:
         return self.items
 
     def browse_links(self):
-        return [l for l in _links(self.root) if l.get("rel") in ("child", "item", "parent", "root")][:100]
+        return [l for l in _links(self.root) if _json_link(l) and l.get("rel") in ("child", "item", "parent", "root")][:100]
 
     async def open_link(self, link):
+        if not _json_link(link):
+            raise ValueError("The catalog link does not advertise a JSON representation.")
         url = https_url(link["href"], self.url)
         if link.get("rel") != "item":
             return await STACBrowser(url, self.fetcher).connect()
@@ -323,9 +336,16 @@ class STACBrowser:
                     pass
             assets = feature.get("assets")
             for asset in assets.values() if isinstance(assets, dict) else []:
-                if isinstance(asset, dict) and isinstance(asset.get("href"), str):
+                if not isinstance(asset, dict):
+                    continue
+                alternates = asset.get("alternate")
+                locations = [asset, *(alternates.values() if isinstance(alternates, dict) else [])]
+                for asset_location in locations:
+                    if (not isinstance(asset_location, dict) or not isinstance(asset_location.get("href"), str)
+                            or not asset_location["href"].strip()):
+                        continue
                     try:
-                        asset["href"] = _http_url(asset["href"], location["base"])
+                        asset_location["href"] = _http_url(asset_location["href"], location["base"])
                     except ValueError:
                         pass
             features.append(feature)
