@@ -249,7 +249,7 @@ export async function clipRaster(request, {GeoTIFF, proj4, fetcher = fetch, sign
   checkSize(tileWidth * tileHeight * pixelBytes, limits.block);
   const blocks = (Math.ceil(right / tileWidth) - Math.floor(left / tileWidth)) * (Math.ceil(bottom / tileHeight) - Math.floor(top / tileHeight));
   checkSize(blocks * tileWidth * tileHeight * pixelBytes, limits.decoded);
-  const provenance = {...request.provenance, source_url: request.url, requested_bbox: bbox, pixel_window: window, output_bounds: bounds,
+  const provenance = {...request.provenance, source_url: request.provenance?.source_url || request.url, requested_bbox: bbox, pixel_window: window, output_bounds: bounds,
     output_crs: `EPSG:${epsg}`, width, height, bands: samples, bits_per_sample: bits, sample_format: format,
     created_at: new Date().toISOString(), method: 'Source-resolution intersecting pixel window; no resampling. Polygon envelope if applicable.', reader: 'GeoTIFF.js 3.0.5'};
   progress({phase: 'estimate', width, height, bounds, epsg, outputBytes, blocks});
@@ -311,7 +311,10 @@ export async function clipRaster(request, {GeoTIFF, proj4, fetcher = fetch, sign
     }).replace('</GDALMetadata>', entry + '</GDALMetadata>');
   } else tags.push([42112, 2, `<GDALMetadata>${entry}</GDALMetadata>`]);
   const buffer = writeGeoTIFF(pixels, {width, height, samples, bits, format, tags}, limits.output);
-  return {buffer, provenance, width, height, bounds, epsg};
+  return {buffer, provenance, width, height, bounds, epsg, bands: samples, pixelIsArea: !grid.point, northUp: true,
+    geoKeys: {model_type: Number(keys?.GTModelTypeGeoKey), raster_type: Number(keys?.GTRasterTypeGeoKey),
+      geographic_type: Number(keys?.GeographicTypeGeoKey), angular_units: Number(keys?.GeogAngularUnitsGeoKey)},
+    modelTransformation: false, origin: [x + left * dx, y + top * dy], resolution: [dx, dy]};
 }
 
 /** A fresh worker per explicit job bounds lifetime and makes Cancel immediate. */

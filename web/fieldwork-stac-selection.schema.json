@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://jltobias.github.io/JupyterLite-STAC-Browser/explorer/fieldwork-stac-selection.schema.json",
+  "title": "FieldWork STAC selection handoff",
+  "type": "object",
+  "required": ["profile", "created_at", "discovery", "selection", "spatial", "temporal", "evidence", "compatibility"],
+  "properties": {
+    "profile": {"const": "fieldwork-stac-selection/1"},
+    "created_at": {"type": "string", "format": "date-time"},
+    "discovery": {"type": "object", "required": ["catalog", "completed_search", "study_area_crs84"]},
+    "selection": {
+      "type": "object",
+      "required": ["collection_id", "item_id", "asset_key", "source_document", "original_href", "resolved_http_href", "declared", "access"],
+      "properties": {
+        "item_id": {"type": "string"}, "asset_key": {"type": "string", "minLength": 1},
+        "source_document": {"type": ["object", "null"], "required": ["response_url", "base_url", "redacted_query_parameters"]},
+        "resolved_http_href": {"type": "string", "pattern": "^https?://"},
+        "declared": {"type": "object"}, "access": {"type": "object"}
+      }
+    },
+    "spatial": {"type": "object", "required": ["item_footprint", "geometry_is_null", "spatial_window_readiness", "study_area_crs84", "clipping_boundary", "acquisition_boundary"]},
+    "temporal": {"type": "object"}, "evidence": {"type": "object"}, "compatibility": {"type": "object"}
+  }
+}

@@ -3,8 +3,10 @@ import asyncio
 import copy
 import json
 import math
+import os
 from pathlib import Path
 import sys
+from tempfile import TemporaryDirectory
 from types import ModuleType, SimpleNamespace
 import unittest
 from urllib.parse import parse_qs, urlsplit
@@ -12,7 +14,7 @@ from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "notebooks"))
-from stac_browser import STACBrowser, PRESETS, date_range, https_url, next_request, validate_bbox, validate_polygon, explorer_url, fetch_json
+from stac_browser import STACBrowser, PRESETS, SELECTION_PROFILE, date_range, https_url, next_request, validate_bbox, validate_polygon, explorer_url, fetch_json
 
 CATALOG = json.loads((ROOT / "tests/fixtures/catalog.json").read_text(encoding="utf-8"))
 ITEMS = json.loads((ROOT / "tests/fixtures/items.json").read_text(encoding="utf-8"))
@@ -437,6 +439,73 @@ class ClientTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(client.provenance()["retrieved_at"], "2026-10-06T12:01:00+00:00")
         exported[0]["properties"]["changed"] = True
         self.assertEqual(client.items[0]["properties"], {})
+
+    async def test_fieldwork_selection_parity_redaction_and_no_asset_fetch(self):
+        fake = Fixture()
+        client = await STACBrowser("https://fixture.test/", fake).connect()
+        await client.search(bbox=[0, 0, 1, 1], collection="TEST")
+        item = client.items[0]
+        item["geometry"] = None
+        item["properties"]["authorization"] = "Bearer never-export"
+        item["properties"]["homepage"] = "https://user:password@catalog.test/private"
+        item["assets"]["data"] = {"href": "data.tif?client_secret=oauth-value&part=1", "type": "image/tiff", "roles": ["data"],
+                                           "auth:refs": ["oidc?code=auth-code&name=provider"],
+                                           "alternate": {"signed": {"href": "https://data.test/a.tif?sv=v&si=azure-sas-value&spr=https&part=1"}}}
+        before = len(fake.calls)
+        handoff = client.fieldwork_selection(item, "data")
+        self.assertEqual(len(fake.calls), before)
+        self.assertEqual(handoff["profile"], "fieldwork-stac-selection/1")
+        self.assertEqual(handoff["selection"]["item_id"], item["id"])
+        self.assertEqual(handoff["selection"]["asset_key"], "data")
+        self.assertEqual(handoff["selection"]["original_href"], "data.tif?part=1")
+        self.assertTrue(handoff["selection"]["resolved_http_href"].endswith("/items/data.tif?part=1"))
+        self.assertEqual(handoff["selection"]["declared"]["auth_refs"], ["oidc?name=provider"])
+        self.assertTrue(handoff["selection"]["access"]["transient_credentials_omitted"])
+        self.assertIsNone(handoff["spatial"]["item_footprint"])
+        self.assertTrue(handoff["spatial"]["geometry_is_null"])
+        self.assertFalse(handoff["spatial"]["spatial_window_readiness"]["ready"])
+        self.assertFalse(handoff["spatial"]["spatial_window_readiness"]["verified"])
+        serialized = json.dumps(handoff)
+        for secret in ("oauth-value", "azure-sas-value", "auth-code", "password", "never-export"):
+            self.assertNotIn(secret, serialized)
+        with self.assertRaisesRegex(ValueError, "owned"):
+            client.fieldwork_selection(item, "missing")
+        clean_client = await STACBrowser("https://fixture.test/", Fixture(copy.deepcopy(CATALOG))).connect()
+        await clean_client.search(bbox=[0, 0, 1, 1], collection="TEST")
+        clean_item = clean_client.items[0]
+        clean_item["assets"]["data"] = {"href": "./data.tif", "type": "image/tiff", "roles": ["data"]}
+        clean_client.root["title"] = "landing?client_secret=catalog-only&visible=yes"
+        catalog_redaction = clean_client.fieldwork_selection(clean_item, "data")
+        self.assertEqual(catalog_redaction["discovery"]["catalog"]["title"], "landing?visible=yes")
+        self.assertTrue(catalog_redaction["selection"]["access"]["transient_credentials_omitted"])
+
+    async def test_save_fieldwork_selection_uses_safe_default_and_preserves_explicit_path(self):
+        client = await STACBrowser("https://fixture.test/", Fixture()).connect()
+        await client.search(bbox=[0, 0, 1, 1], collection="TEST")
+        item = client.items[0]
+        old_key = (item.get("collection", ""), item["id"])
+        location = client._item_locations.pop(old_key)
+        item["id"] = "../provider scene:" + "x" * 170
+        client._item_locations[(item.get("collection", ""), item["id"])] = location
+        asset = item["assets"].pop("data")
+        asset_key = "../../data key?.tif"
+        item["assets"][asset_key] = asset
+        with TemporaryDirectory() as directory:
+            previous = Path.cwd()
+            os.chdir(directory)
+            try:
+                saved = client.save_fieldwork_selection(item, asset_key)
+                self.assertEqual(saved.parent, Path("."))
+                self.assertLessEqual(len(saved.stem), 150)
+                self.assertRegex(saved.name, r"^[A-Za-z0-9_.-]+\.json$")
+                parsed = json.loads(saved.read_text(encoding="utf-8"))
+                self.assertEqual(parsed["selection"]["item_id"], item["id"])
+                self.assertEqual(parsed["selection"]["asset_key"], asset_key)
+                explicit = Path(directory) / "caller-chosen.json"
+                self.assertEqual(client.save_fieldwork_selection(item, asset_key, explicit), explicit)
+                self.assertEqual(json.loads(explicit.read_text(encoding="utf-8"))["profile"], SELECTION_PROFILE)
+            finally:
+                os.chdir(previous)
 
     async def test_static_catalog_and_item(self):
         root = {**CATALOG, "links": [{"rel": "item", "href": "./item.json"}]}

@@ -18,6 +18,10 @@ The [Pages workflow](https://github.com/jltobias/JupyterLite-STAC-Browser/action
 4. Export loaded Items as GeoJSON and save the query as Search JSON. Export copies resolve relative asset/source links to absolute URLs; the client keeps the original metadata intact. The provenance `retrieved_at` value records the last successful item/page retrieval and stays unchanged when exporting again.
 5. Open JupyterLite and run the three tutorials: launch the map, search WorldPop, explore other catalogs and reuse exports.
 
+For FieldWork preparation, select one asset and choose **Download FieldWork selection (.json)**. This secret-free metadata handoff binds the asset to its Item, source document, completed search and CRS84 study area without requesting asset bytes. Notebook 03 provides the matching `fieldwork_selection` and `save_fieldwork_selection` helpers. FieldWork has no released direct importer for this profile; obtain the raster through the provider and use FieldWork's manual Raster input. See the [FieldWork handoff report](book/fieldwork-integration.md).
+
+After a crop, the Explorer reports every FieldWork compatibility constraint. A one-band, north-up PixelIsArea EPSG:4326 crop with the required explicit GeoKeys, no ModelTransformation, a consistent CRS84 grid, at most 262,144 cells, and at most 5,000,000 bytes offers a `fieldwork-raster-handoff/1` sidecar. Its SHA-256 and byte count are computed from the same saved GeoTIFF bytes; it records the grid, distinct clip/acquisition bounds, source lineage and FieldWork raster provenance fields without another provider request. Incompatible crops remain downloadable under the normal browser rules and are not called FieldWork-ready.
+
 The map shows **metadata coverage, not population raster values**. Raster assets are never downloaded automatically. WorldPop `datetime` can describe a release date; inspect `properties.year` and `properties.project` for the population reference year/product.
 
 Select a result to reveal **Download dataset** at the top of the right-hand metadata pane. Choose a file's **Download** link; datasets with several files offer each separately, while advertised previews and metadata sidecars have **Open** links. Files come directly from the provider and may open in a new tab; use your browser's Save option if needed. These links download the full asset. For supported public TIFFs, choose **Clip study bbox → GeoTIFF** to save only the current study bounding box at source resolution, including inside JupyterLite. Authentication requirements are shown when advertised, and S3-only assets expose an address for a compatible client. **Download item metadata (.json)** is always available for a selected Item; it saves the original STAC record, not the dataset files. If no browser-downloadable data is advertised, the pane explains this and points to provider access information.
@@ -56,7 +60,7 @@ python -m venv .venv
 # Windows PowerShell: .venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
 python -m unittest discover -s tests -p 'test_*.py' -v
-node --test tests/test_stac.mjs tests/test_copernicus_session.mjs
+node --test tests/test_stac.mjs tests/test_copernicus_session.mjs tests/test_fieldwork.mjs
 python tests/raster_clip_check.py
 python scripts/build.py
 python -m http.server 8000 --directory _site

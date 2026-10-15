@@ -162,6 +162,7 @@ export class STACClient {
     this.itemLocations = new WeakMap();
   }
   baseFor(item) { return this.itemLocations.get(item)?.base || this.url; }
+  sourceFor(item) { return this.itemLocations.get(item)?.source || this.url; }
   linkURL(item, link) {
     return safeURL(link.href, link.rel === 'self' ? this.itemLocations.get(item)?.source || this.url : this.baseFor(item));
   }
@@ -258,8 +259,7 @@ export class STACClient {
     this.retrievedAt = new Date().toISOString();
     return data;
   }
-  geojson() {
-    return {type: 'FeatureCollection', features: this.items.map(item => {
+  portableItem(item) {
       const copy = structuredClone(item);
       for (const link of links(copy)) {
         try { link.href = this.linkURL(item, link); } catch { /* Preserve unsupported source metadata verbatim. */ }
@@ -273,7 +273,9 @@ export class STACClient {
         }
       }
       return copy;
-    })};
+  }
+  geojson() {
+    return {type: 'FeatureCollection', features: this.items.map(item => this.portableItem(item))};
   }
   provenance() { return structuredClone({stac_root: this.url, query: this.query, spatial_mode: this.query ? (this.query.bbox ? 'bbox' : this.query.intersects ? 'polygon' : 'none') : null, study_area: this.studyArea, requests: this.history, retrieved_at: this.retrievedAt, count: this.items.length, max_items: MAX_ITEMS}); }
 }

@@ -1,5 +1,6 @@
 """Generate real TIFF fixtures with GDAL/rasterio, run JS crops, independently verify them."""
 import argparse
+import hashlib
 import json
 import math
 import os
@@ -91,21 +92,22 @@ def fill_order_fixture():
 
 
 ATTACHMENT = raster_bytes()
+FIELDWORK_ATTACHMENT = raster_bytes(count=1)
 
 
-def fulfill_raster(route, requests=None):
+def fulfill_raster(route, requests=None, attachment=ATTACHMENT):
     """A real tiled attachment for navigation, or an exact single-range response."""
     header = route.request.headers.get('range')
     if requests is not None:
         requests.append(header)
     if header:
         start, end = (int(value) for value in header.removeprefix('bytes=').split('-'))
-        end = min(end, len(ATTACHMENT) - 1)
-        route.fulfill(status=206, body=ATTACHMENT[start:end + 1], content_type='image/tiff',
-                      headers={'Content-Range': f'bytes {start}-{end}/{len(ATTACHMENT)}',
+        end = min(end, len(attachment) - 1)
+        route.fulfill(status=206, body=attachment[start:end + 1], content_type='image/tiff',
+                      headers={'Content-Range': f'bytes {start}-{end}/{len(attachment)}',
                                'Access-Control-Allow-Origin': '*', 'Access-Control-Expose-Headers': 'Content-Range'})
     else:
-        route.fulfill(body=ATTACHMENT, content_type='application/octet-stream',
+        route.fulfill(body=attachment, content_type='application/octet-stream',
                       headers={'Content-Disposition': 'attachment; filename="population.tif"'})
 
 
@@ -119,6 +121,9 @@ def check_crop_downloads(page, catalog, original):
     requests, pending, static_pending, downloads, searches = [], [], [], [], []
     mode = ['range']
     def route_fixture(route):
+        if route.request.url.endswith('/fieldwork.tif'):
+            fulfill_raster(route, requests, FIELDWORK_ATTACHMENT)
+            return
         if route.request.url.endswith('/source.tif'):
             if mode[0] == 'pending':
                 pending.append(route)
@@ -160,6 +165,8 @@ def check_crop_downloads(page, catalog, original):
     with page.expect_download() as downloaded:
         page.locator('.asset-clip').click()
     verify_crop(ATTACHMENT, Path(downloaded.value.path()).read_bytes())
+    expect(page.locator('.crop-status')).to_contain_text('requires one band (output has 3)')
+    expect(page.locator('.fieldwork-raster-download')).to_have_count(0)
     expect(page.locator('.crop-status')).to_contain_text('Saved 29 × 41 pixels in EPSG:4326')
     assert len(searches) == 1 and all(requests)
     assert sum(int(r.split('-')[1]) - int(r.split('=')[1].split('-')[0]) + 1 for r in requests) < len(ATTACHMENT)
@@ -233,11 +240,43 @@ def check_crop_downloads(page, catalog, original):
     with page.expect_download() as polygon_download:
         page.locator('.asset-clip').click()
     verify_crop(ATTACHMENT, Path(polygon_download.value.path()).read_bytes())
+    # A compatible single-band crop exposes a digest-backed sidecar without a new provider request.
+    item['assets']['data']['href'] = './fieldwork.tif'
+    page.locator('#search').click()
+    expect(page.locator('#search')).to_be_enabled()
+    page.locator('.result-card').click()
+    with page.expect_download() as fieldwork_crop:
+        page.locator('.asset-clip').click()
+    crop_bytes = Path(fieldwork_crop.value.path()).read_bytes()
+    verify_crop(FIELDWORK_ATTACHMENT, crop_bytes)
+    expect(page.locator('.crop-status')).to_contain_text('FieldWork-ready')
+    request_count = len(requests)
+    with page.expect_download() as fieldwork_sidecar:
+        page.get_by_role('button', name='Download FieldWork raster handoff (.json)').click()
+    sidecar = json.loads(Path(fieldwork_sidecar.value.path()).read_text())
+    assert sidecar['profile'] == 'fieldwork-raster-handoff/1'
+    assert sidecar['raster']['byte_count'] == len(crop_bytes)
+    assert sidecar['raster']['sha256'] == hashlib.sha256(crop_bytes).hexdigest()
+    with MemoryFile(crop_bytes) as memory:
+        with memory.open() as crop:
+            grid = sidecar['raster']['grid']
+            assert (grid['width'], grid['height'], grid['bands']) == (crop.width, crop.height, crop.count)
+            assert grid['pixel_is_area'] is True and grid['north_up'] is True
+            assert grid['origin'] == [crop.transform.c, crop.transform.f]
+            assert grid['resolution'] == [crop.transform.a, crop.transform.e]
+            assert sidecar['raster']['bounds']['clipping_boundary'] == {'crs': 'CRS84', 'bbox': BBOX}
+            acquisition = sidecar['raster']['bounds']['acquisition_boundary']
+            assert acquisition['crs'] == 'EPSG:4326'
+            expected_bounds = [crop.bounds.left, crop.bounds.bottom, crop.bounds.right, crop.bounds.top]
+            assert all(math.isclose(actual, expected, abs_tol=1e-12)
+                       for actual, expected in zip(acquisition['bounds'], expected_bounds))
+    assert sidecar['fieldwork']['raster_provenance']['downloadURL'] == host + '/fieldwork.tif'
+    assert len(requests) == request_count, 'Sidecar hashing must not make a provider request'
     page.locator('#draw-area').click()
     page.locator('.asset-clip').click()
     expect(page.locator('.crop-status')).to_contain_text('Finish or cancel drawing')
     page.locator('#cancel-draw').click()
-    assert len(searches) == 1
+    assert len(searches) == 2
     for preview in ['overview', 'thumbnail']:
         item['assets']['data']['roles'] = ['data', preview]
         page.locator('#search').click()

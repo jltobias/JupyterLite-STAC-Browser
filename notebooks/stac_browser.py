@@ -7,6 +7,7 @@ import copy
 import json
 import re
 from datetime import date, datetime, timezone
+from pathlib import Path
 from urllib.parse import parse_qsl, urljoin, urlsplit, urlunsplit, urlencode
 
 PRESETS = {
@@ -17,6 +18,74 @@ PRESETS = {
     "planetary": "https://planetarycomputer.microsoft.com/api/stac/v1",
 }
 MAX_ITEMS = 500
+SELECTION_PROFILE = "fieldwork-stac-selection/1"
+_SECRET_KEY = re.compile(r"(?:^|[_:-])(authorization|bearer|token|access[_-]?token|refresh[_-]?token|password|passwd|secret|signature|sig|credential|api[_-]?key|subscription[_-]?key)(?:$|[_:-])", re.I)
+_SENSITIVE_PARAMETER = re.compile(r"^(access_token|refresh_token|id_token|oauth_token|oauth_verifier|token|client_id|client_secret|code|code_verifier|assertion|client_assertion|saml_?response|sig|signature|awsaccesskeyid|googleaccessid|expires|policy|key-pair-id|x-amz-.+|x-goog-.+|se|sp|sr|sv|si|sip|spr|srt|ss|st|ses|skoid|sktid|skt|ske|sks|skv|rscc|rscd|rsce|rscl|rsct|key|api_key|apikey|subscription-key)$", re.I)
+
+
+def _sanitized_url(value, base=""):
+    url = urljoin(base, value)
+    parsed = urlsplit(url)
+    if parsed.scheme not in ("http", "https") or not parsed.hostname or parsed.username or parsed.password:
+        raise ValueError("The selected asset has no usable HTTP(S) location.")
+    kept, redacted = [], []
+    for key, entry in parse_qsl(parsed.query, keep_blank_values=True):
+        if _SENSITIVE_PARAMETER.match(key):
+            redacted.append(key)
+        else:
+            kept.append((key, entry))
+    return urlunsplit((parsed.scheme, parsed.netloc, parsed.path, urlencode(kept), "")), sorted(set(redacted))
+
+
+def _sanitized_reference(value):
+    absolute = bool(re.match(r"^[a-z][a-z0-9+.-]*://", value, re.I))
+    relative = value.startswith(("./", "../", "/")) or bool(re.match(r"^[^\s?#]+\?[^#]*$", value))
+    if not absolute and not relative:
+        return value
+    try:
+        if relative and not value.startswith("//"):
+            path, _, query = value.partition("?")
+            kept = [(name, entry) for name, entry in parse_qsl(query.split("#", 1)[0], keep_blank_values=True)
+                    if not _SENSITIVE_PARAMETER.match(name)]
+            return path.split("#", 1)[0] + (("?" + urlencode(kept)) if kept else "")
+        parsed = urlsplit(value if absolute else "https:" + value)
+        if parsed.username or parsed.password:
+            return "[REDACTED UNSAFE URL]"
+        kept = [(name, entry) for name, entry in parse_qsl(parsed.query, keep_blank_values=True)
+                if not _SENSITIVE_PARAMETER.match(name)]
+        sanitized = urlunsplit((parsed.scheme, parsed.netloc, parsed.path, urlencode(kept), ""))
+        return sanitized if absolute else sanitized.removeprefix("https:")
+    except (TypeError, ValueError):
+        return "[REDACTED UNSAFE URL]"
+
+
+def _sanitize_export(value, key=""):
+    if _SECRET_KEY.search(key):
+        return "[REDACTED]"
+    if isinstance(value, str):
+        if re.search(r"\bbearer\s+[A-Za-z0-9._~+/=-]+", value, re.I):
+            return "[REDACTED]"
+        if (re.match(r"^(?:[a-z][a-z0-9+.-]*://|\.?\.?/|/)", value, re.I)
+                or re.match(r"^[^\s?#]+\?[^#]*$", value)):
+            return _sanitized_reference(value)
+        return value
+    if isinstance(value, list):
+        return [_sanitize_export(entry) for entry in value]
+    if isinstance(value, dict):
+        return {name: _sanitize_export(entry, name) for name, entry in value.items()}
+    return value
+
+
+def _utc(value):
+    if not isinstance(value, str):
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+    except ValueError:
+        return None
 
 
 def https_url(value, base=""):
@@ -356,6 +425,91 @@ class STACBrowser:
         return copy.deepcopy({"stac_root": self.url, "query": self.query, "spatial_mode": mode,
                               "study_area": self.study_area, "requests": self.requests,
                               "retrieved_at": self.retrieved_at, "count": len(self.items), "max_items": MAX_ITEMS})
+
+    def fieldwork_selection(self, item, asset_key):
+        """Build a secret-free, one-asset metadata handoff without fetching asset bytes."""
+        if item not in self.items or not isinstance(item.get("assets"), dict) or asset_key not in item["assets"]:
+            raise ValueError("Choose an asset owned by a loaded STAC Item.")
+        asset = item["assets"][asset_key]
+        if not isinstance(asset, dict) or not isinstance(asset.get("href"), str) or not asset["href"].strip():
+            raise ValueError("The selected asset has no usable HTTP(S) location.")
+        location = self._item_locations.get(_item_key(item))
+        if not location or not location.get("source"):
+            raise ValueError("A source-document base is required for a relative asset href.")
+        candidates = [asset["href"]]
+        alternate = asset.get("alternate")
+        if isinstance(alternate, dict):
+            candidates.extend(entry.get("href") for entry in alternate.values() if isinstance(entry, dict))
+        resolved = redacted_parameters = None
+        for candidate in candidates:
+            if not isinstance(candidate, str) or not candidate.strip():
+                continue
+            try:
+                resolved, redacted_parameters = _sanitized_url(candidate, location["base"])
+                break
+            except ValueError:
+                continue
+        if resolved is None:
+            raise ValueError("The selected asset has no usable HTTP(S) location.")
+        original = _sanitized_reference(asset["href"])
+        properties = item.get("properties") if isinstance(item.get("properties"), dict) else {}
+        locations = [asset, *(asset.get("alternate", {}).values() if isinstance(asset.get("alternate"), dict) else [])]
+        auth_refs = list(dict.fromkeys(value for entry in locations if isinstance(entry, dict)
+                                       for value in (entry.get("auth:refs", []) if isinstance(entry.get("auth:refs"), list) else [])
+                                       if isinstance(value, str)))
+        provenance = self.provenance()
+        study_area = provenance.get("study_area")
+        source, source_redacted = _sanitized_url(location["source"])
+        source_base, base_redacted = _sanitized_url(location["base"])
+        raw_catalog = {"url": self.url, "id": self.root.get("id") if self.root else None,
+                       "title": self.root.get("title") if self.root else None}
+        sanitized_asset, sanitized_item, sanitized_auth_refs = _sanitize_export(asset), _sanitize_export(item), _sanitize_export(auth_refs)
+        sanitized_catalog, sanitized_provenance, sanitized_study_area = (_sanitize_export(raw_catalog),
+                                                                          _sanitize_export(provenance), _sanitize_export(study_area))
+        credentials_omitted = bool(auth_refs or redacted_parameters or source_redacted or base_redacted or original != asset["href"]
+                                   or sanitized_item != item or sanitized_catalog != raw_catalog
+                                   or sanitized_provenance != provenance or sanitized_study_area != study_area
+                                   or sanitized_auth_refs != auth_refs)
+        return {
+            "profile": SELECTION_PROFILE,
+            "created_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+            "discovery": {"catalog": sanitized_catalog,
+                          "completed_search": sanitized_provenance, "study_area_crs84": sanitized_study_area},
+            "selection": {"collection_id": item.get("collection"), "item_id": str(item.get("id")), "asset_key": asset_key,
+                          "source_document": {"response_url": source, "base_url": source_base,
+                                              "redacted_query_parameters": sorted(set(source_redacted + base_redacted))},
+                          "original_href": _sanitize_export(original),
+                          "resolved_http_href": resolved, "redacted_query_parameters": redacted_parameters,
+                          "declared": {"media_type": asset.get("type"),
+                                       "roles": [value for value in asset.get("roles", []) if isinstance(value, str)] if isinstance(asset.get("roles"), list) else [],
+                                       "auth_refs": sanitized_auth_refs,
+                                       "crs": asset.get("proj:epsg", asset.get("proj:code", properties.get("proj:epsg", properties.get("proj:code"))))},
+                          "access": {"transient_credentials_omitted": credentials_omitted,
+                                     "instruction": "Obtain access through the provider, then use FieldWork's manual Raster input."
+                                     if credentials_omitted else "Use FieldWork's manual Raster input; direct STAC import is not currently supported."}},
+            "spatial": {"item_footprint": _sanitize_export(item.get("geometry")), "geometry_is_null": item.get("geometry") is None,
+                        "spatial_window_readiness": ({"verified": False, "ready": False,
+                                                       "reason": "Item geometry is null; no footprint or spatial-window readiness is inferred."}
+                                                      if item.get("geometry") is None else
+                                                      {"verified": False, "ready": None,
+                                                       "reason": "Selection metadata does not verify raster coverage or a clipping window."}),
+                        "study_area_crs84": _sanitize_export(study_area), "clipping_boundary": None, "acquisition_boundary": None},
+            "temporal": {"item_datetime_utc": _utc(properties.get("datetime")), "item_start_datetime_utc": _utc(properties.get("start_datetime")),
+                         "item_end_datetime_utc": _utc(properties.get("end_datetime")), "discovered_at_utc": _utc(self.retrieved_at)},
+            "evidence": {"raw_stac_item": sanitized_item, "raw_stac_asset": sanitized_asset},
+            "compatibility": {"native_fieldwork_import": False, "manual_raster_input": True},
+        }
+
+    def save_fieldwork_selection(self, item, asset_key, path=None):
+        """Save one versioned selection handoff; this performs no asset request."""
+        document = self.fieldwork_selection(item, asset_key)
+        if path is None:
+            stem = re.sub(r"[^A-Za-z0-9_.-]", "_", f"{item['id']}-{asset_key}-fieldwork-selection")[:150]
+            target = Path(stem + ".json")
+        else:
+            target = Path(path)
+        target.write_text(json.dumps(document, indent=2), encoding="utf-8")
+        return target
 
     def save(self, prefix="stac"):
         if not self.items:

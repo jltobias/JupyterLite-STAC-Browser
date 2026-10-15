@@ -4,6 +4,7 @@ import {createDirectoryChooser, endpointProblem} from './catalog-directory.js';
 import {startRasterClip} from './raster-clip.js';
 import {copernicusSubset} from './copernicus-subset.js';
 import {CopernicusSession, isProtectedURL, readProtectedRange, downloadOriginal, originalFilename} from './copernicus-session.js';
+import {buildFieldworkSelection, assessFieldworkRaster, buildFieldworkRasterHandoff, sanitizeExport, sanitizedURL} from './fieldwork-handoff.js';
 const $ = id => document.getElementById(id);
 const client = new STACClient();
 L.PM.setOptIn(true);
@@ -255,9 +256,13 @@ function cropOption(li, {item, key, asset, href, supporting, auth, copernicus, a
     let job, sessionJob;
     try {
       if (authenticated) sessionJob = copernicusSession.job();
-      job = startRasterClip({url: authenticated ? authURL : href, bbox: area.bbox, ...(sessionJob ? {auth: sessionJob.auth()} : {}), provenance: {item_id: item.id, collection: item.collection,
-        item_datetime: item.properties?.datetime, asset_key: key, asset: structuredClone(asset), study_area: area,
-        stac_root: client.url, item_source: client.baseFor(item), license: item.properties?.license || client.collections.find(c => c.id === item.collection)?.license}}, progress => {
+      const requestURL = authenticated ? authURL : href;
+      let publicSource = null, publicItemSource = null;
+      try { publicSource = sanitizedURL(requestURL, client.baseFor(item)).href; } catch { /* Worker validation reports unusable locations. */ }
+      try { const source = new URL(sanitizedURL(client.sourceFor(item)).href); source.search = ''; publicItemSource = source.href; } catch { /* Retain null rather than unsafe source metadata. */ }
+      job = startRasterClip({url: requestURL, bbox: area.bbox, ...(sessionJob ? {auth: sessionJob.auth()} : {}), provenance: {item_id: item.id, collection: item.collection,
+        item_datetime: item.properties?.datetime, asset_key: key, asset: sanitizeExport(asset), study_area: area,
+        source_url: publicSource, stac_root: sanitizeExport(client.url), item_source: publicItemSource, license: item.properties?.license || client.collections.find(c => c.id === item.collection)?.license}}, progress => {
         if (selected !== cropSelection || !clip.isConnected || sessionJob?.signal.aborted) return;
         if (progress.phase === 'estimate') message.textContent = frozenText + `Output: ${progress.width} × ${progress.height} pixels, EPSG:${progress.epsg}; extent ${progress.bounds.join(', ')}. About ${(progress.outputBytes / 2 ** 20).toFixed(2)} MiB plus metadata; ${progress.blocks} intersecting blocks.`;
         else if (progress.phase === 'pixels') message.textContent = frozenText + `Reading block ${progress.completed}/${progress.blocks}; ${(progress.bytes / 2 ** 20).toFixed(2)} MiB transferred.`;
@@ -273,6 +278,34 @@ function cropOption(li, {item, key, asset, href, supporting, auth, copernicus, a
       message.textContent = frozenText + `Saved ${result.width} × ${result.height} pixels in EPSG:${result.epsg}. Actual output extent: ${result.bounds.join(', ')}. Pixel edges align to the source grid; all supported source bands and NoData are retained.`;
       const provenance = el('button', 'Download crop provenance (.json)'); provenance.type = 'button'; provenance.onclick = () => download(name + '.json', result.provenance);
       message.append(provenance);
+      const raster = {width: result.width, height: result.height, bands: result.bands, epsg: result.epsg, pixelIsArea: result.pixelIsArea,
+        northUp: result.northUp, geoKeys: result.geoKeys, modelTransformation: result.modelTransformation,
+        bounds: result.bounds, origin: result.origin, resolution: result.resolution};
+      const fieldwork = assessFieldworkRaster({...raster, byteCount: result.buffer.byteLength});
+      if (fieldwork.compatible) {
+        message.append(el('small', ' FieldWork-ready: explicit WGS84/PixelIsArea GeoKeys, no ModelTransformation, a consistent north-up CRS84 grid, one band, at most 262,144 cells and 5,000,000 bytes.'));
+        const sidecar = el('button', 'Download FieldWork raster handoff (.json)', 'fieldwork-raster-download'); sidecar.type = 'button';
+        sidecar.onclick = async () => {
+          sidecar.disabled = true;
+          try {
+            const handoff = await buildFieldworkRasterHandoff({buffer: result.buffer, raster, sourceLineage: result.provenance,
+              fieldworkProvenance: {
+                title: asset.title || item.properties?.title || String(item.id),
+                provider: (Array.isArray(item.properties?.providers) ? item.properties.providers : client.collections.find(c => c.id === item.collection)?.providers || []).map(value => value?.name).filter(Boolean).join(', '),
+                sourceURL: sanitizeExport(client.sourceFor(item)), downloadURL: publicSource, identifier: String(item.id),
+                citation: item.properties?.citation || '', license: item.properties?.license || client.collections.find(c => c.id === item.collection)?.license || '',
+                version: asset.version || item.properties?.version || '', temporalCoverage: item.properties?.datetime || item.properties?.start_datetime || '',
+                published: item.properties?.published || item.properties?.created || '', accessed: result.provenance.created_at?.slice(0, 10) || '',
+                units: asset['raster:bands']?.[0]?.unit || asset['eo:bands']?.[0]?.unit || '',
+                notes: 'Source-resolution crop prepared by JupyterLite STAC Browser. Descriptive metadata comes from STAC declarations and is not byte or format verification.',
+              },
+              clippingBoundary: {crs: 'CRS84', bbox: area.bbox}, acquisitionBoundary: {crs: `EPSG:${result.epsg}`, bounds: result.bounds}});
+            download(name + '-fieldwork.json', handoff);
+          } catch (error) { message.append(el('small', error.message, 'error')); }
+          finally { sidecar.disabled = false; }
+        };
+        message.append(sidecar);
+      } else message.append(el('small', ` Not claimed FieldWork-ready: ${fieldwork.reasons.join('; ')}.`));
     } catch (error) { if (clip.isConnected) message.textContent = frozenText + error.message; }
     finally { sessionJob?.finish(); if (cropJob === job) cropJob = null; cancel.hidden = true; document.querySelectorAll('.asset-clip').forEach(button => { button.disabled = Boolean(cropJob); }); }
   };
@@ -398,6 +431,15 @@ function datasetDownloads(item) {
       }
     }
     if (authURL) protectedControls(li, {href: authURL, asset, key});
+    const fieldwork = el('button', 'Download FieldWork selection (.json)', 'fieldwork-selection-download'); fieldwork.type = 'button';
+    fieldwork.onclick = () => {
+      try {
+        const handoff = buildFieldworkSelection({item, assetKey: key, accessHref: href, sourceDocument: client.sourceFor(item), itemBase: base,
+          catalog: {url: client.url, id: client.root?.id ?? null, title: client.root?.title ?? null}, completedSearch: client.provenance()});
+        download(`${item.id}-${key}-fieldwork-selection`.replace(/[^a-zA-Z0-9_.-]/g, '_').slice(0, 150) + '.json', handoff);
+      } catch (error) { li.append(el('small', error.message, 'error')); }
+    };
+    li.append(fieldwork, el('small', 'Metadata handoff only. It makes no asset request; direct FieldWork STAC import is future work.'));
     cropOption(li, {item, key, asset, href, supporting, auth, copernicus, authURL});
     assets.append(li);
   }

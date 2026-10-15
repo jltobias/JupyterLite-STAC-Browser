@@ -9,6 +9,7 @@ project:
     - file: setup.md
     - file: exploration.md
     - file: catalog-compatibility.md
+    - file: fieldwork-integration.md
     - title: Executable tutorials
       children:
         - file: 01_launch_map.ipynb

@@ -14,6 +14,8 @@ def check_downloads(page, catalog, items):
     item = copy.deepcopy(items['features'][0])
     item['id'] = 'download-fixture'
     item['properties']['title'] = 'Dataset with several files'
+    item['properties']['private'] = {'authorization': 'Bearer browser-secret',
+                                     'href': host + '/metadata?token=signed-secret&visible=yes'}
     item['links'] = [{'rel': 'self', 'href': host + '/items/selected.json'},
                      {'rel': 'about', 'href': host + '/provider', 'title': 'Provider access'}]
     item['assets'] = {
@@ -70,6 +72,18 @@ def check_downloads(page, catalog, items):
     assert page.locator('#metadata img, #metadata script, #metadata a[href^="javascript:"]').count() == 0
     assert section.locator('a[href*="user:secret"]').count() == 0
     assert not asset_requests, 'Selecting metadata must never fetch assets'
+    population = section.locator('li').filter(has_text='Population raster')
+    with page.expect_download() as handoff_download:
+        population.get_by_role('button', name='Download FieldWork selection (.json)').click()
+    handoff = json.loads(Path(handoff_download.value.path()).read_text(encoding='utf-8'))
+    assert handoff['profile'] == 'fieldwork-stac-selection/1'
+    assert handoff['selection']['item_id'] == item['id'] and handoff['selection']['asset_key'] == 'raster'
+    assert handoff['selection']['original_href'] == './data.tif'
+    assert handoff['selection']['resolved_http_href'] == host + '/items/data.tif'
+    assert handoff['spatial']['study_area_crs84'] == handoff['discovery']['study_area_crs84']
+    assert {'item_footprint', 'study_area_crs84', 'clipping_boundary', 'acquisition_boundary'} <= set(handoff['spatial'])
+    assert 'browser-secret' not in json.dumps(handoff) and 'signed-secret' not in json.dumps(handoff)
+    assert not asset_requests, 'Selection handoff must never fetch assets'
     assert page.locator('#metadata').evaluate("e => e.querySelector('section').compareDocumentPosition(e.querySelector('dl')) & Node.DOCUMENT_POSITION_FOLLOWING")
     output = Path(__file__).resolve().parents[1] / 'test-results'
     output.mkdir(exist_ok=True)
