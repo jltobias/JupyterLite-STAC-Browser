@@ -5,6 +5,7 @@ import {startRasterClip} from './raster-clip.js';
 import {copernicusSubset} from './copernicus-subset.js';
 import {CopernicusSession, isProtectedURL, readProtectedRange, downloadOriginal, originalFilename} from './copernicus-session.js';
 import {buildFieldworkSelection, assessFieldworkRaster, buildFieldworkRasterHandoff, sanitizeExport, sanitizedURL} from './fieldwork-handoff.js';
+import {rustGISAssetHandoff, rustGISItemHandoff} from './rustgis-handoff.js';
 const $ = id => document.getElementById(id);
 const client = new STACClient();
 L.PM.setOptIn(true);
@@ -356,6 +357,40 @@ function protectedControls(li, {href, asset, key}) {
   fallback.onclick = () => perform('original');
   group.append(check, original, fallback, cancel, message); li.append(group);
 }
+function rustGISItemAction(item) {
+  const selves = (Array.isArray(item.links) ? item.links : []).filter(link => link && typeof link === 'object' && link.rel === 'self' && typeof link.href === 'string');
+  for (const self of selves) {
+    let handoff;
+    try {
+      const authRefs = Object.prototype.hasOwnProperty.call(self, 'auth:refs') ? self['auth:refs'] : [];
+      handoff = rustGISItemHandoff({href: client.linkURL(item, self), type: self.type, authRefs});
+    } catch { continue; }
+    if (!handoff.available) continue;
+    const section = el('section', null, 'rustgis-item');
+    const link = addLink(section, 'Open item in RustGIS ↗', handoff.href);
+    if (!link) continue;
+    link.className = 'rustgis-item-link';
+    link.setAttribute('aria-label', `Open STAC Item ${item.id} in RustGIS`);
+    section.append(el('small', 'RustGIS chooses the Item’s visual asset or first GeoTIFF. Provider CORS, range, format, size, and access rules still apply.'));
+    return section;
+  }
+  return null;
+}
+function rustGISAssetAction(asset, access, base, roles) {
+  const alternates = asset.alternate && typeof asset.alternate === 'object' ? Object.values(asset.alternate) : [];
+  const candidates = [...new Set([access, asset, ...alternates].filter(location => location && typeof location === 'object'))];
+  let firstFailure = null;
+  for (const location of candidates) {
+    if (typeof location.href !== 'string') continue;
+    const ownsAuth = Object.prototype.hasOwnProperty.call(location, 'auth:refs');
+    const primaryOwnsAuth = Object.prototype.hasOwnProperty.call(asset, 'auth:refs');
+    const authRefs = ownsAuth ? location['auth:refs'] : location !== asset && primaryOwnsAuth ? asset['auth:refs'] : [];
+    const result = rustGISAssetHandoff({href: location.href, base, type: location.type || asset.type, roles, authRefs});
+    if (result.available) return result;
+    firstFailure ||= result;
+  }
+  return firstFailure || {available: false, reason: 'RustGIS needs a public HTTP(S) asset address.'};
+}
 function datasetDownloads(item) {
   const section = el('section', null, 'dataset-downloads');
   section.setAttribute('aria-labelledby', 'download-heading');
@@ -392,8 +427,12 @@ function datasetDownloads(item) {
     try { sessionAsset ||= new URL(safeURL(href)).origin === 'https://download.dataspace.copernicus.eu'; } catch { /* Unsafe links receive no session controls. */ }
     if (sessionAsset) li.dataset.sessionAsset = key;
     if (sessionAsset && !authURL) li.append(el('small', 'Token access is unavailable for this URL: it is outside the permitted Copernicus download scope. Use the official provider browser.', 'scope-unavailable'));
-    const authRefs = Array.isArray(access['auth:refs']) ? access['auth:refs'] : Array.isArray(asset['auth:refs']) ? asset['auth:refs'] : [];
-    const auth = Boolean(copernicus) || authRefs.length > 0;
+    const accessOwnsAuth = Object.prototype.hasOwnProperty.call(access, 'auth:refs');
+    const assetOwnsAuth = Object.prototype.hasOwnProperty.call(asset, 'auth:refs');
+    const authDeclaration = accessOwnsAuth ? access['auth:refs'] : assetOwnsAuth ? asset['auth:refs'] : [];
+    const authRefs = Array.isArray(authDeclaration) ? authDeclaration : [];
+    const invalidAuth = !Array.isArray(authDeclaration);
+    const auth = Boolean(copernicus) || invalidAuth || authRefs.length > 0;
     if (auth) {
       if (!copernicus) otherRestrictedAssets = true;
       li.append(el('small', 'Provider authentication required'));
@@ -431,6 +470,13 @@ function datasetDownloads(item) {
       }
     }
     if (authURL) protectedControls(li, {href: authURL, asset, key});
+    const rustgis = rustGISAssetAction(asset, access, base, roles);
+    if (rustgis.available) {
+      const link = addLink(li, 'Add to RustGIS ↗', rustgis.href);
+      link.className = 'rustgis-add';
+      link.setAttribute('aria-label', `Add ${label} to RustGIS`);
+      li.append(el('small', 'Opens this exact public asset in RustGIS Web. Its server must allow browser CORS; streamed formats also need Range access.'));
+    } else li.append(el('small', rustgis.reason, 'rustgis-unavailable'));
     const fieldwork = el('button', 'Download FieldWork selection (.json)', 'fieldwork-selection-download'); fieldwork.type = 'button';
     fieldwork.onclick = () => {
       try {
@@ -473,7 +519,8 @@ function highlightSelection(item, button, fit = true) {
 function select(item, button, fit = true) {
   cancelCrop(); cropSelection++; selectedItem = item;
   highlightSelection(item, button, fit);
-  const panel = $('metadata'); panel.replaceChildren(el('h3', item.properties?.title || item.id), datasetDownloads(item));
+  const panel = $('metadata'), rustgis = rustGISItemAction(item);
+  panel.replaceChildren(el('h3', item.properties?.title || item.id), datasetDownloads(item), ...(rustgis ? [rustgis] : []));
   const props = item.properties || {};
   panel.append(el('p', props.description || 'No item description supplied.'));
   const collection = client.collections.find(c => c.id === item.collection);

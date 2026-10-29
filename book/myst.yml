@@ -10,6 +10,7 @@ project:
     - file: exploration.md
     - file: catalog-compatibility.md
     - file: fieldwork-integration.md
+    - file: rustgis-integration.md
     - title: Executable tutorials
       children:
         - file: 01_launch_map.ipynb

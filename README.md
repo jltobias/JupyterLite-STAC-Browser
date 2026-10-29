@@ -20,6 +20,8 @@ The [Pages workflow](https://github.com/jltobias/JupyterLite-STAC-Browser/action
 
 For FieldWork preparation, select one asset and choose **Download FieldWork selection (.json)**. This secret-free metadata handoff binds the asset to its Item, source document, completed search and CRS84 study area without requesting asset bytes. Notebook 03 provides the matching `fieldwork_selection` and `save_fieldwork_selection` helpers. FieldWork has no released direct importer for this profile; obtain the raster through the provider and use FieldWork's manual Raster input. See the [FieldWork handoff report](book/fieldwork-integration.md).
 
+For a compatible public asset, choose **Add to RustGIS** to open that exact dataset in a blank [RustGIS Web](https://web.rustgis.app/) project. **Open item in RustGIS** passes a safe STAC Item self link and lets RustGIS choose its visual or first GeoTIFF asset. These user-initiated deep links do not fetch asset bytes in this application. They are withheld for protected, credential-bearing, signed, supporting or unsupported assets; provider CORS, Range, size and access rules still apply. See the [RustGIS handoff guide](book/rustgis-integration.md).
+
 After a crop, the Explorer reports every FieldWork compatibility constraint. A one-band, north-up PixelIsArea EPSG:4326 crop with the required explicit GeoKeys, no ModelTransformation, a consistent CRS84 grid, at most 262,144 cells, and at most 5,000,000 bytes offers a `fieldwork-raster-handoff/1` sidecar. Its SHA-256 and byte count are computed from the same saved GeoTIFF bytes; it records the grid, distinct clip/acquisition bounds, source lineage and FieldWork raster provenance fields without another provider request. Incompatible crops remain downloadable under the normal browser rules and are not called FieldWork-ready.
 
 The map shows **metadata coverage, not population raster values**. Raster assets are never downloaded automatically. WorldPop `datetime` can describe a release date; inspect `properties.year` and `properties.project` for the population reference year/product.
@@ -60,7 +62,7 @@ python -m venv .venv
 # Windows PowerShell: .venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
 python -m unittest discover -s tests -p 'test_*.py' -v
-node --test tests/test_stac.mjs tests/test_copernicus_session.mjs tests/test_fieldwork.mjs
+node --test tests/test_stac.mjs tests/test_copernicus_session.mjs tests/test_fieldwork.mjs tests/test_rustgis.mjs
 python tests/raster_clip_check.py
 python scripts/build.py
 python -m http.server 8000 --directory _site
@@ -82,7 +84,7 @@ Pinned primary dependencies are in `requirements.txt`. Jupyter Book 2 generates 
 
 ## Tests and deployment
 
-`python -m unittest discover -s tests -p 'test_*.py' -v` validates Python protocol behavior, build staging and notebooks. `node --test tests/test_stac.mjs tests/test_copernicus_session.mjs` checks the JavaScript protocol and protected-session transport. `python tests/browser_check.py` checks browser protocol and UI against deterministic fixtures, including malicious metadata, errors, exports, mobile layout, authenticated real-worker crops, original bytes, writable-file streaming and session cancellation. `python tests/lite_check.py --fixtures --base-path /JupyterLite-STAC-Browser` executes all three tutorials in real JupyterLite, checks editing in its embedded explorer, and replays bbox/polygon/no-filter queries against synthetic catalog responses. These checks run in CI; the runtime test requires access to the Pyodide CDN.
+`python -m unittest discover -s tests -p 'test_*.py' -v` validates Python protocol behavior, build staging and notebooks. `node --test tests/test_stac.mjs tests/test_copernicus_session.mjs tests/test_fieldwork.mjs tests/test_rustgis.mjs` checks the JavaScript protocol, protected-session transport, and external handoff contracts. `python tests/browser_check.py` checks browser protocol and UI against deterministic fixtures, including malicious metadata, errors, exports, mobile layout, RustGIS eligibility, authenticated real-worker crops, original bytes, writable-file streaming and session cancellation. `python tests/lite_check.py --fixtures --base-path /JupyterLite-STAC-Browser` executes all three tutorials in real JupyterLite, checks editing in its embedded explorer, and replays bbox/polygon/no-filter queries against synthetic catalog responses. These checks run in CI; the runtime test requires access to the Pyodide CDN.
 
 For all three notebooks with live WorldPop and Earth Search requests, run `python tests/lite_check.py --base-path /JupyterLite-STAC-Browser`. Use `--base-path ""` for a root build. Add `--site-url https://jltobias.github.io/JupyterLite-STAC-Browser` to check the published site. Live tests use normal browser CORS/TLS enforcement; provider availability remains external.
 

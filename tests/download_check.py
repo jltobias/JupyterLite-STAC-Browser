@@ -2,7 +2,7 @@
 import copy
 import json
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 
 from playwright.sync_api import expect
 
@@ -69,6 +69,17 @@ def check_downloads(page, catalog, items):
     expect(section.get_by_role('textbox', name='Blank alternative asset address', exact=True)).to_have_value('s3://fixture/blank.tif')
     expect(section.get_by_role('link', name='Open Preview', exact=True)).to_be_visible()
     expect(section.get_by_role('link', name='Open Metadata sidecar', exact=True)).to_be_visible()
+    expect(section.locator('.rustgis-add')).to_have_count(2)
+    rustgis_asset = section.get_by_role('link', name='Add Population raster to RustGIS', exact=True)
+    expect(rustgis_asset).to_have_attribute('target', '_blank')
+    expect(rustgis_asset).to_have_attribute('rel', 'noopener noreferrer')
+    rustgis_query = parse_qs(urlsplit(rustgis_asset.get_attribute('href')).query, keep_blank_values=True)
+    assert rustgis_query == {'blank': [''], 'data': [host + '/items/data.tif']}
+    rustgis_item = page.get_by_role('link', name=f'Open STAC Item {item["id"]} in RustGIS', exact=True)
+    expect(rustgis_item).to_have_attribute('target', '_blank')
+    expect(rustgis_item).to_have_attribute('rel', 'noopener noreferrer')
+    item_query = parse_qs(urlsplit(rustgis_item.get_attribute('href')).query, keep_blank_values=True)
+    assert item_query == {'blank': [''], 'stac': [host + '/items/selected.json']}
     assert page.locator('#metadata img, #metadata script, #metadata a[href^="javascript:"]').count() == 0
     assert section.locator('a[href*="user:secret"]').count() == 0
     assert not asset_requests, 'Selecting metadata must never fetch assets'
@@ -100,6 +111,25 @@ def check_downloads(page, catalog, items):
         section.get_by_role('button', name='Download item metadata (.json)', exact=True).click()
     assert json.loads(Path(result.value.path()).read_text(encoding='utf-8')) == item
     assert len(asset_requests) == 1
+    # Item handoffs choose the first safe JSON representation and reject protected/non-JSON-only self links.
+    item['id'] += '-self-representations'
+    item['links'] = [
+        {'rel': 'self', 'href': host + '/items/provider.html', 'type': 'text/html'},
+        {'rel': 'self', 'href': host + '/items/selected-json.json', 'type': 'application/geo+json'},
+    ]
+    select()
+    item_link = page.get_by_role('link', name=f'Open STAC Item {item["id"]} in RustGIS', exact=True)
+    assert parse_qs(urlsplit(item_link.get_attribute('href')).query)['stac'] == [host + '/items/selected-json.json']
+    item['id'] += '-protected'
+    item['links'] = [{'rel': 'self', 'href': host + '/items/protected.json', 'type': 'application/geo+json', 'auth:refs': ['oidc']}]
+    select()
+    expect(page.locator('.rustgis-item-link')).to_have_count(0)
+    item['id'] += '-html'
+    item['links'] = [{'rel': 'self', 'href': host + '/items/provider.html', 'type': 'text/html'}]
+    select()
+    expect(page.locator('.rustgis-item-link')).to_have_count(0)
+    item['links'] = [{'rel': 'self', 'href': host + '/items/selected.json', 'type': 'application/geo+json'}]
+    assert len(asset_requests) == 1
     # Subsequent selections must bind downloads to the current Item, including absent assets.
     restricted = {'href': host + '/restricted.tif', 'title': 'Restricted file', 'auth:refs': ['signing']}
     item['properties']['auth:schemes'] = {'signing': {'type': 'signedUrl', 'description': 'Obtain a signed URL from the provider. <script>unsafe()</script>'}}
@@ -116,12 +146,26 @@ def check_downloads(page, catalog, items):
             expect(section).to_contain_text('These data links require provider authentication')
             expect(section).to_contain_text('This browser does not sign in or sign URLs')
             expect(section).to_contain_text('Obtain a signed URL from the provider.')
+            expect(section.locator('.rustgis-add')).to_have_count(0)
+            expect(section).to_contain_text('cannot transfer provider authentication')
             assert section.locator('script').count() == 0
+        if set(assets) == {'thumbnail'}:
+            expect(section.locator('.rustgis-add')).to_have_count(0)
+            expect(section).to_contain_text('unavailable for preview')
         expect(section).to_contain_text('metadata only')
         with page.expect_download() as result:
             section.get_by_role('button', name='Download item metadata (.json)', exact=True).click()
         assert json.loads(Path(result.value.path()).read_text(encoding='utf-8')) == item
         assert len(asset_requests) == 1
+
+    item['id'] += '-malformed-auth'
+    item['assets'] = {'data': {**item['assets'].get('data', {'href': './data.tif', 'type': 'image/tiff'}),
+                               'href': './data.tif', 'type': 'image/tiff', 'auth:refs': 'oidc'}}
+    select()
+    expect(section.locator('.rustgis-add')).to_have_count(0)
+    expect(section).to_contain_text('Provider authentication required')
+    expect(section).to_contain_text('cannot transfer provider authentication')
+    assert len(asset_requests) == 1
 
     # An alternate declares its own auth requirements; absent refs inherit the primary.
     for alternate_auth, restricted_alternate in [({'auth:refs': []}, False), ({}, True), ({'auth:refs': ['signing']}, True)]:
@@ -133,14 +177,36 @@ def check_downloads(page, catalog, items):
         if restricted_alternate:
             expect(section).to_contain_text('Provider authentication required')
             expect(section).to_contain_text('Obtain a signed URL from the provider.')
+            expect(section.locator('.rustgis-add')).to_have_count(0)
         else:
             expect(section).not_to_contain_text('Provider authentication required')
+            expect(section.locator('.rustgis-add')).to_have_count(1)
+            alternate_query = parse_qs(urlsplit(section.locator('.rustgis-add').get_attribute('href')).query)
+            assert alternate_query['data'] == [host + '/items/public.tif']
         with page.expect_download() as result:
             page.locator('#export-geojson').click()
         exported = json.loads(Path(result.value.path()).read_text())['features'][0]['assets']['data']
         assert exported['href'] == 's3://fixture/restricted.tif'
         assert exported['alternate']['https']['href'] == host + '/items/public.tif'
         assert item['assets']['data']['alternate']['https']['href'] == './public.tif'
+    assert len(asset_requests) == 1
+
+    # RustGIS may use a safe public alternate rejected by neither credentials nor its own media type.
+    item['id'] += '-rustgis-alternate'
+    item['assets'] = {'data': {'href': host + '/signed.tif?sig=secret', 'type': 'application/octet-stream',
+                               'alternate': {'public': {'href': './public-extensionless', 'type': 'image/tiff', 'auth:refs': []}},
+                               'roles': ['data']}}
+    select()
+    expect(section.locator('.rustgis-add')).to_have_count(1)
+    alternate_query = parse_qs(urlsplit(section.locator('.rustgis-add').get_attribute('href')).query)
+    assert alternate_query['data'] == [host + '/items/public-extensionless']
+    item['id'] += '-unsupported-alternate'
+    item['assets'] = {'data': {'href': 's3://fixture/source.tif', 'type': 'image/tiff',
+                               'alternate': {'public': {'href': './public.bin', 'type': 'application/xml', 'auth:refs': []}},
+                               'roles': ['data']}}
+    select()
+    expect(section.locator('.rustgis-add')).to_have_count(0)
+    expect(section).to_contain_text('does not directly support')
     assert len(asset_requests) == 1
 
     # COG HTTPS alternatives and direct NetCDF OData URLs must use provider sign-in.
@@ -169,6 +235,8 @@ def check_downloads(page, catalog, items):
         expect(section).to_contain_text('401 Unauthorized')
         expect(section).to_contain_text('select HTTPS if offered, then Download')
         expect(section.locator('.asset-provider')).to_have_count(2 if format == 'cog' else 1)
+        expect(section.locator('.rustgis-add')).to_have_count(0)
+        expect(section).to_contain_text('cannot transfer')
         expect(section.locator('.asset-provider').first).to_have_attribute('href', provider_root + path)
         assert section.locator('.asset-provider').first.get_attribute('download') is None
         expect(section.get_by_role('textbox').first).to_have_value(api_url)

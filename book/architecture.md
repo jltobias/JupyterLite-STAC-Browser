@@ -8,6 +8,12 @@ The map client uses browser `fetch`. The Python helper uses `pyodide.http.pyfetc
 
 Requests are bounded: 20-second network timeouts, 1–100 items per search page, 500 accumulated unique items, 1,000 collections, and at most 100 static navigation links displayed. Pagination is explicit. Dataset assets are links and are never fetched automatically.
 
+## RustGIS Web handoff
+
+`web/rustgis-handoff.js` builds user-activated links for RustGIS Web's documented `data` and `stac` query parameters. Per-asset links use the exact resolved public asset; Item links require an advertised safe JSON `self` URL. Rendering either action performs no asset request. The allow-list covers formats RustGIS Web reads directly and excludes supporting roles, NetCDF, JPEG 2000 and ambiguous archives.
+
+Before a link is exposed, the builder rejects non-HTTP(S) locations, URL user information, recognized signed or credential query parameters, `auth:refs`, and protected Copernicus OData paths. The memory-only Copernicus token is never available to the builder. RustGIS performs the later fetch in its own origin, so provider CORS, Range, size, format and access rules remain authoritative.
+
 `study-area.js` owns one editable layer through the public Geoman Free drawing, layer-dragging, and vertex-editing APIs. Collection coverage and Item footprints occupy separate map panes and are excluded from Geoman. Editing has no search side effects. `geometry.js` and the Python helper validate the same bounded, simple WGS84 polygon shapes; neither repairs topology nor supports holes, MultiPolygons, or date-line edges. A bbox can span the whole world. Search serializes exactly one of `bbox`, `intersects`, or neither; GET encodes `intersects` as JSON and POST sends a geometry object. Exact polygon queries prefer an advertised POST search link; GET-only providers may require fewer vertices if the URL is too long (HTTP 414). There is no silent spatial fallback. Existing unrelated advertised URL parameters remain intact.
 
 Study geometry and spatial mode are captured when a request starts and committed with a successful response. Later UI edits and failed searches keep the previous results, query, requests, and study snapshot together. Notebook 03 replays bbox, exact-polygon, unrestricted, and static-item exports. Geoman 2.20.0 is pinned and served locally under the same deployment subpath, including inside the JupyterLite iframe.
