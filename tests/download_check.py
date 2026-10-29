@@ -75,6 +75,12 @@ def check_downloads(page, catalog, items):
     expect(rustgis_asset).to_have_attribute('rel', 'noopener noreferrer')
     rustgis_query = parse_qs(urlsplit(rustgis_asset.get_attribute('href')).query, keep_blank_values=True)
     assert rustgis_query == {'blank': [''], 'data': [host + '/items/data.tif']}
+    expect(section.locator('.geolibre-add')).to_have_count(2)
+    geolibre_asset = section.get_by_role('link', name='Add Population raster to GeoLibre', exact=True)
+    expect(geolibre_asset).to_have_attribute('target', '_blank')
+    expect(geolibre_asset).to_have_attribute('rel', 'noopener noreferrer')
+    geolibre_query = parse_qs(urlsplit(geolibre_asset.get_attribute('href')).query, keep_blank_values=True)
+    assert geolibre_query == {'data': [host + '/items/data.tif']}
     rustgis_item = page.get_by_role('link', name=f'Open STAC Item {item["id"]} in RustGIS', exact=True)
     expect(rustgis_item).to_have_attribute('target', '_blank')
     expect(rustgis_item).to_have_attribute('rel', 'noopener noreferrer')
@@ -147,11 +153,16 @@ def check_downloads(page, catalog, items):
             expect(section).to_contain_text('This browser does not sign in or sign URLs')
             expect(section).to_contain_text('Obtain a signed URL from the provider.')
             expect(section.locator('.rustgis-add')).to_have_count(0)
+            expect(section.locator('.geolibre-add')).to_have_count(0)
             expect(section).to_contain_text('cannot transfer provider authentication')
             assert section.locator('script').count() == 0
         if set(assets) == {'thumbnail'}:
             expect(section.locator('.rustgis-add')).to_have_count(0)
+            expect(section.locator('.geolibre-add')).to_have_count(0)
             expect(section).to_contain_text('unavailable for preview')
+        if assets.get('data', {}).get('roles') == {'bad': 'metadata'}:
+            expect(section.locator('.geolibre-add')).to_have_count(0)
+            expect(section).to_contain_text('roles declaration is malformed')
         expect(section).to_contain_text('metadata only')
         with page.expect_download() as result:
             section.get_by_role('button', name='Download item metadata (.json)', exact=True).click()
@@ -163,6 +174,7 @@ def check_downloads(page, catalog, items):
                                'href': './data.tif', 'type': 'image/tiff', 'auth:refs': 'oidc'}}
     select()
     expect(section.locator('.rustgis-add')).to_have_count(0)
+    expect(section.locator('.geolibre-add')).to_have_count(0)
     expect(section).to_contain_text('Provider authentication required')
     expect(section).to_contain_text('cannot transfer provider authentication')
     assert len(asset_requests) == 1
@@ -178,11 +190,15 @@ def check_downloads(page, catalog, items):
             expect(section).to_contain_text('Provider authentication required')
             expect(section).to_contain_text('Obtain a signed URL from the provider.')
             expect(section.locator('.rustgis-add')).to_have_count(0)
+            expect(section.locator('.geolibre-add')).to_have_count(0)
         else:
             expect(section).not_to_contain_text('Provider authentication required')
             expect(section.locator('.rustgis-add')).to_have_count(1)
             alternate_query = parse_qs(urlsplit(section.locator('.rustgis-add').get_attribute('href')).query)
             assert alternate_query['data'] == [host + '/items/public.tif']
+            expect(section.locator('.geolibre-add')).to_have_count(1)
+            geolibre_query = parse_qs(urlsplit(section.locator('.geolibre-add').get_attribute('href')).query)
+            assert geolibre_query == {'data': [host + '/items/public.tif']}
         with page.expect_download() as result:
             page.locator('#export-geojson').click()
         exported = json.loads(Path(result.value.path()).read_text())['features'][0]['assets']['data']
@@ -200,12 +216,14 @@ def check_downloads(page, catalog, items):
     expect(section.locator('.rustgis-add')).to_have_count(1)
     alternate_query = parse_qs(urlsplit(section.locator('.rustgis-add').get_attribute('href')).query)
     assert alternate_query['data'] == [host + '/items/public-extensionless']
+    expect(section.locator('.geolibre-add')).to_have_count(0)
     item['id'] += '-unsupported-alternate'
     item['assets'] = {'data': {'href': 's3://fixture/source.tif', 'type': 'image/tiff',
                                'alternate': {'public': {'href': './public.bin', 'type': 'application/xml', 'auth:refs': []}},
                                'roles': ['data']}}
     select()
     expect(section.locator('.rustgis-add')).to_have_count(0)
+    expect(section.locator('.geolibre-add')).to_have_count(0)
     expect(section).to_contain_text('does not directly support')
     assert len(asset_requests) == 1
 
@@ -236,6 +254,7 @@ def check_downloads(page, catalog, items):
         expect(section).to_contain_text('select HTTPS if offered, then Download')
         expect(section.locator('.asset-provider')).to_have_count(2 if format == 'cog' else 1)
         expect(section.locator('.rustgis-add')).to_have_count(0)
+        expect(section.locator('.geolibre-add')).to_have_count(0)
         expect(section).to_contain_text('cannot transfer')
         expect(section.locator('.asset-provider').first).to_have_attribute('href', provider_root + path)
         assert section.locator('.asset-provider').first.get_attribute('download') is None
@@ -275,6 +294,7 @@ def check_downloads(page, catalog, items):
     select()
     expect(section.locator('.asset-download')).to_have_count(0)
     expect(section.locator('.asset-supporting.asset-provider')).to_have_count(1)
+    expect(section.locator('.geolibre-add')).to_have_count(0)
     expect(section).to_contain_text('No browser-downloadable data file is advertised')
     expect(section).to_contain_text('Copernicus supporting files require sign-in')
     item['assets'] = {'copernicus': {'href': api_url, 'roles': ['data']}, 'public': {'href': host + '/public.tif'}, 'restricted': restricted}
@@ -283,6 +303,7 @@ def check_downloads(page, catalog, items):
     expect(section.locator('.asset-provider')).to_have_count(1)
     expect(section).to_contain_text('Copernicus downloads require sign-in')
     expect(section).to_contain_text('This browser does not sign in or sign URLs')
+    expect(section.locator('.geolibre-add')).to_have_count(1)
     assert not protected_requests
     assert len(asset_requests) == 1
     page.context.unroute('https://download.dataspace.copernicus.eu/**', reject_protected)

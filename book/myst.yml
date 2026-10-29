@@ -11,6 +11,7 @@ project:
     - file: catalog-compatibility.md
     - file: fieldwork-integration.md
     - file: rustgis-integration.md
+    - file: geolibre-integration.md
     - title: Executable tutorials
       children:
         - file: 01_launch_map.ipynb

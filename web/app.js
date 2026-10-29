@@ -6,6 +6,7 @@ import {copernicusSubset} from './copernicus-subset.js';
 import {CopernicusSession, isProtectedURL, readProtectedRange, downloadOriginal, originalFilename} from './copernicus-session.js';
 import {buildFieldworkSelection, assessFieldworkRaster, buildFieldworkRasterHandoff, sanitizeExport, sanitizedURL} from './fieldwork-handoff.js';
 import {rustGISAssetHandoff, rustGISItemHandoff} from './rustgis-handoff.js';
+import {geoLibreAssetHandoff} from './geolibre-handoff.js';
 const $ = id => document.getElementById(id);
 const client = new STACClient();
 L.PM.setOptIn(true);
@@ -376,7 +377,7 @@ function rustGISItemAction(item) {
   }
   return null;
 }
-function rustGISAssetAction(asset, access, base, roles) {
+function externalAssetAction(builder, fallback, asset, access, base, roles) {
   const alternates = asset.alternate && typeof asset.alternate === 'object' ? Object.values(asset.alternate) : [];
   const candidates = [...new Set([access, asset, ...alternates].filter(location => location && typeof location === 'object'))];
   let firstFailure = null;
@@ -385,11 +386,17 @@ function rustGISAssetAction(asset, access, base, roles) {
     const ownsAuth = Object.prototype.hasOwnProperty.call(location, 'auth:refs');
     const primaryOwnsAuth = Object.prototype.hasOwnProperty.call(asset, 'auth:refs');
     const authRefs = ownsAuth ? location['auth:refs'] : location !== asset && primaryOwnsAuth ? asset['auth:refs'] : [];
-    const result = rustGISAssetHandoff({href: location.href, base, type: location.type || asset.type, roles, authRefs});
+    const result = builder({href: location.href, base, type: location.type || asset.type, roles, authRefs});
     if (result.available) return result;
     firstFailure ||= result;
   }
-  return firstFailure || {available: false, reason: 'RustGIS needs a public HTTP(S) asset address.'};
+  return firstFailure || {available: false, reason: fallback};
+}
+function rustGISAssetAction(asset, access, base, roles) {
+  return externalAssetAction(rustGISAssetHandoff, 'RustGIS needs a public HTTP(S) asset address.', asset, access, base, roles);
+}
+function geoLibreAssetAction(asset, access, base, roles) {
+  return externalAssetAction(geoLibreAssetHandoff, 'GeoLibre needs a public HTTPS asset address.', asset, access, base, roles);
 }
 function datasetDownloads(item) {
   const section = el('section', null, 'dataset-downloads');
@@ -477,6 +484,14 @@ function datasetDownloads(item) {
       link.setAttribute('aria-label', `Add ${label} to RustGIS`);
       li.append(el('small', 'Opens this exact public asset in RustGIS Web. Its server must allow browser CORS; streamed formats also need Range access.'));
     } else li.append(el('small', rustgis.reason, 'rustgis-unavailable'));
+    const geolibreRoles = Object.prototype.hasOwnProperty.call(asset, 'roles') ? asset.roles : roles;
+    const geolibre = geoLibreAssetAction(asset, access, base, geolibreRoles);
+    if (geolibre.available) {
+      const link = addLink(li, 'Add to GeoLibre ↗', geolibre.href);
+      link.className = 'geolibre-add';
+      link.setAttribute('aria-label', `Add ${label} to GeoLibre`);
+      li.append(el('small', 'Opens this exact public asset in GeoLibre Web. Its server must allow browser CORS; COG, GeoParquet, PMTiles, and COPC streaming also need Range access.'));
+    } else li.append(el('small', geolibre.reason, 'geolibre-unavailable'));
     const fieldwork = el('button', 'Download FieldWork selection (.json)', 'fieldwork-selection-download'); fieldwork.type = 'button';
     fieldwork.onclick = () => {
       try {
