@@ -21,6 +21,10 @@ MAX_ITEMS = 500
 SELECTION_PROFILE = "fieldwork-stac-selection/1"
 _SECRET_KEY = re.compile(r"(?:^|[_:-])(authorization|bearer|token|access[_-]?token|refresh[_-]?token|password|passwd|secret|signature|sig|credential|api[_-]?key|subscription[_-]?key)(?:$|[_:-])", re.I)
 _SENSITIVE_PARAMETER = re.compile(r"^(access_token|refresh_token|id_token|oauth_token|oauth_verifier|token|client_id|client_secret|code|code_verifier|assertion|client_assertion|saml_?response|sig|signature|awsaccesskeyid|googleaccessid|expires|policy|key-pair-id|x-amz-.+|x-goog-.+|se|sp|sr|sv|si|sip|spr|srt|ss|st|ses|skoid|sktid|skt|ske|sks|skv|rscc|rscd|rsce|rscl|rsct|key|api_key|apikey|subscription-key)$", re.I)
+_TIFF_TYPES = {"image/tiff", "image/geotiff", "image/vnd.stac.geotiff", "application/geotiff", "application/x-geotiff"}
+_SUPPORTING_ROLES = {"thumbnail", "overview", "metadata"}
+_COPERNICUS_DOWNLOAD_HOST = "download.dataspace.copernicus.eu"
+_RUSTGIS_WEB_URL = "https://web.rustgis.app/"
 
 
 def _sanitized_url(value, base=""):
@@ -425,6 +429,56 @@ class STACBrowser:
         return copy.deepcopy({"stac_root": self.url, "query": self.query, "spatial_mode": mode,
                               "study_area": self.study_area, "requests": self.requests,
                               "retrieved_at": self.retrieved_at, "count": len(self.items), "max_items": MAX_ITEMS})
+
+    def public_cog_handoff(self, item, asset_key=None, explorer=None):
+        """Build explicit download/RustGIS/GeoLibre actions for one conservative public COG candidate."""
+        if not _valid_item(item) or item not in self.items or not isinstance(item.get("assets"), dict):
+            raise ValueError("Choose a loaded STAC Item with assets.")
+        location = self._item_locations.get(_item_key(item))
+        if not location or not location.get("base"):
+            raise ValueError("The selected Item has no retained source-document base.")
+
+        def assess(key):
+            asset = item["assets"].get(key)
+            if not isinstance(asset, dict) or not isinstance(asset.get("href"), str) or not asset["href"].strip():
+                return None
+            roles = asset.get("roles")
+            if not isinstance(roles, list) or any(not isinstance(value, str) for value in roles):
+                return None
+            normalized_roles = {value.strip().lower() for value in roles}
+            if "data" not in normalized_roles or normalized_roles & _SUPPORTING_ROLES:
+                return None
+            auth_refs = asset.get("auth:refs", [])
+            if not isinstance(auth_refs, list) or auth_refs:
+                return None
+            media_type = asset.get("type")
+            media_type = media_type.split(";", 1)[0].strip().lower() if isinstance(media_type, str) else ""
+            if media_type not in _TIFF_TYPES:
+                return None
+            try:
+                source, redacted = _sanitized_url(asset["href"], location["base"])
+            except ValueError:
+                return None
+            parsed = urlsplit(source)
+            if (parsed.scheme != "https"
+                    or (parsed.hostname or "").lower().rstrip(".") == _COPERNICUS_DOWNLOAD_HOST):
+                return None
+            if redacted or parsed.query or not re.search(r"\.(?:tif|tiff|cog)$", parsed.path, re.I):
+                return None
+            return key, source
+
+        selected = assess(asset_key) if isinstance(asset_key, str) else None
+        if asset_key is None:
+            selected = next((candidate for key in item["assets"] if (candidate := assess(key)) is not None), None)
+        if selected is None:
+            raise ValueError("No safe public HTTPS data-role COG candidate is available for this Item.")
+        selected_key, source = selected
+        rustgis = _RUSTGIS_WEB_URL + "?" + urlencode((("blank", ""), ("data", source)))
+        explorer_base = explorer if explorer is not None else explorer_url()
+        bridge = urljoin(explorer_base.rstrip("/") + "/", "geolibre-bridge.html")
+        geolibre = bridge + ("&" if "?" in bridge else "?") + urlencode((("data", source), ("kind", "cog")))
+        return {"item_id": str(item.get("id")), "asset_key": selected_key, "href": source,
+                "download": source, "rustgis": rustgis, "geolibre": geolibre, "kind": "cog"}
 
     def fieldwork_selection(self, item, asset_key):
         """Build a secret-free, one-asset metadata handoff without fetching asset bytes."""

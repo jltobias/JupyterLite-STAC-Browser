@@ -17,6 +17,8 @@ project:
         - file: 01_launch_map.ipynb
         - file: 02_worldpop_search.ipynb
         - file: 03_other_catalogs_and_export.ipynb
+        - file: 04_discover_download_rustgis.ipynb
+        - file: 05_discover_download_geolibre.ipynb
     - file: architecture.md
     - file: references.md
 site:

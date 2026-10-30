@@ -479,6 +479,70 @@ class ClientTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(catalog_redaction["discovery"]["catalog"]["title"], "landing?visible=yes")
         self.assertTrue(catalog_redaction["selection"]["access"]["transient_credentials_omitted"])
 
+    async def test_public_cog_handoff_exact_urls_and_fail_closed_inputs(self):
+        fake = Fixture()
+        client = await STACBrowser("https://fixture.test/", fake).connect()
+        await client.search(bbox=[0, 0, 1, 1], collection="TEST")
+        item = client.items[0]
+        item["assets"]["data"] = {"href": "./data.tif", "type": "image/tiff; profile=cloud-optimized", "roles": ["data"]}
+        before = len(fake.calls)
+        handoff = client.public_cog_handoff(item, explorer="https://site.test/repo/explorer/")
+        self.assertEqual(len(fake.calls), before)
+        self.assertEqual(handoff["item_id"], item["id"])
+        self.assertEqual(handoff["asset_key"], "data")
+        self.assertEqual(handoff["href"], "https://fixture.test/items/data.tif")
+        self.assertEqual(handoff["download"], handoff["href"])
+        self.assertEqual(parse_qs(urlsplit(handoff["rustgis"]).query, keep_blank_values=True),
+                         {"blank": [""], "data": [handoff["href"]]})
+        self.assertEqual(urlsplit(handoff["geolibre"]).path, "/repo/explorer/geolibre-bridge.html")
+        self.assertEqual(parse_qs(urlsplit(handoff["geolibre"]).query),
+                         {"data": [handoff["href"]], "kind": ["cog"]})
+        self.assertEqual(handoff["kind"], "cog")
+        without_slash = client.public_cog_handoff(item, "data", "https://site.test/repo/explorer")
+        self.assertEqual(urlsplit(without_slash["geolibre"]).path, "/repo/explorer/geolibre-bridge.html")
+
+        safe = copy.deepcopy(item["assets"]["data"])
+        rejected = [
+            {**safe, "href": "./data.tif?authorization=never-show"},
+            {**safe, "href": "./data.tif?X-Amz-Signature=never-show"},
+            {**safe, "href": "./data.tif?access-token=never-show"},
+            {**safe, "href": "./data.tif?unknown=never-show"},
+            {**safe, "href": "https://user:never-show@data.test/data.tif"},
+            {**safe, "href": "http://data.test/data.tif"},
+            {**safe, "href": "https://download.dataspace.copernicus.eu/file.tif"},
+            {**safe, "href": "https://DOWNLOAD.DATASPACE.COPERNICUS.EU.:443/file.tif"},
+            {**safe, "href": "./data.nc"},
+            {**safe, "type": "application/x-netcdf"},
+            {**safe, "roles": ["data", "metadata"]},
+            {**safe, "roles": ["data", 1]},
+            {**safe, "roles": ["thumbnail"]},
+            {**safe, "roles": "data"},
+            {**safe, "auth:refs": ["oidc"]},
+            {**safe, "auth:refs": "oidc"},
+            {**safe, "href": " "},
+        ]
+        for asset in rejected:
+            item["assets"]["data"] = asset
+            with self.assertRaisesRegex(ValueError, "No safe public HTTPS data-role COG") as caught:
+                client.public_cog_handoff(item, "data")
+            self.assertNotIn("never-show", str(caught.exception))
+        item["assets"]["data"] = safe
+        outsider = copy.deepcopy(item)
+        outsider["id"] = "not-loaded"
+        with self.assertRaisesRegex(ValueError, "loaded STAC Item"):
+            client.public_cog_handoff(outsider, "data")
+        with self.assertRaisesRegex(ValueError, "No safe public HTTPS data-role COG"):
+            client.public_cog_handoff(item, "missing")
+        with self.assertRaisesRegex(ValueError, "loaded STAC Item"):
+            client.public_cog_handoff(None)
+        item_id = item.pop("id")
+        try:
+            with self.assertRaisesRegex(ValueError, "loaded STAC Item"):
+                client.public_cog_handoff(item, "data")
+        finally:
+            item["id"] = item_id
+        self.assertEqual(len(fake.calls), before)
+
     async def test_save_fieldwork_selection_uses_safe_default_and_preserves_explicit_path(self):
         client = await STACBrowser("https://fixture.test/", Fixture()).connect()
         await client.search(bbox=[0, 0, 1, 1], collection="TEST")

@@ -2,6 +2,11 @@ from pathlib import Path
 import ast
 import contextlib
 import io
+import json
+import shutil
+import subprocess
+import sys
+from tempfile import TemporaryDirectory
 import unittest
 import nbformat
 
@@ -11,7 +16,10 @@ ROOT = Path(__file__).resolve().parents[1]
 class NotebookTests(unittest.TestCase):
     def test_notebooks_are_valid_and_executable_python(self):
         paths = sorted((ROOT / "notebooks").glob("*.ipynb"))
-        self.assertEqual(len(paths), 3)
+        self.assertEqual([path.name for path in paths], [
+            "01_launch_map.ipynb", "02_worldpop_search.ipynb", "03_other_catalogs_and_export.ipynb",
+            "04_discover_download_rustgis.ipynb", "05_discover_download_geolibre.ipynb",
+        ])
         for path in paths:
             notebook = nbformat.read(path, as_version=4)
             nbformat.validate(notebook)
@@ -20,6 +28,47 @@ class NotebookTests(unittest.TestCase):
                 if cell.cell_type == "code":
                     compile(cell.source, str(path), "exec", flags=ast.PyCF_ALLOW_TOP_LEVEL_AWAIT)
                     self.assertEqual(cell.outputs, [])
+
+    def test_gis_handoff_tutorials_are_explicit_and_user_activated(self):
+        for name, destination, prefix, marker in [
+            ("04_discover_download_rustgis.ipynb", "handoff['rustgis']", "rustgis-tutorial", "RustGIS workflow ready"),
+            ("05_discover_download_geolibre.ipynb", "handoff['geolibre']", "geolibre-tutorial", "GeoLibre workflow ready"),
+        ]:
+            notebook = nbformat.read(ROOT / "notebooks" / name, as_version=4)
+            source = "\n".join(cell.source for cell in notebook.cells)
+            self.assertIn("client.public_cog_handoff(item", source)
+            self.assertIn("handoff['download']", source)
+            self.assertIn(destination, source)
+            self.assertIn("target=\"_blank\"", source)
+            self.assertIn("rel=\"noopener noreferrer\"", source)
+            self.assertIn("Retry or choose another catalog", source)
+            self.assertIn("never fabricates results", source)
+            self.assertIn("Selected candidate asset:", source)
+            self.assertIn("Collection license:", source)
+            self.assertIn("Collection providers:", source)
+            self.assertIn("Download selected GeoTIFF/COG candidate", source)
+            self.assertNotIn("Download selected COG", source)
+            self.assertIn(f"client.save('{prefix}')", source)
+            self.assertIn(f"'{prefix}-items.geojson'", source)
+            self.assertIn(f"'{prefix}-search.json'", source)
+            self.assertIn("json.loads(Path(saved_name).read_text", source)
+            self.assertIn(marker, source)
+            self.assertNotIn("await pyfetch", source)
+            self.assertNotIn("requests.get", source)
+
+    def test_generator_reproduces_checked_in_notebooks(self):
+        with TemporaryDirectory() as directory:
+            isolated = Path(directory)
+            (isolated / "scripts").mkdir()
+            (isolated / "notebooks").mkdir()
+            generator = isolated / "scripts" / "create_notebooks.py"
+            shutil.copy2(ROOT / "scripts" / "create_notebooks.py", generator)
+            subprocess.run([sys.executable, str(generator)], cwd=isolated, check=True, capture_output=True, text=True)
+            for checked_in in sorted((ROOT / "notebooks").glob("*.ipynb")):
+                generated = isolated / "notebooks" / checked_in.name
+                self.assertTrue(generated.is_file(), checked_in.name)
+                self.assertEqual(json.loads(generated.read_text(encoding="utf-8")),
+                                 json.loads(checked_in.read_text(encoding="utf-8")))
 
     def test_four_sources_and_attribution(self):
         references = ["github.com/developmentseed/stac-map", "pystac-client.readthedocs.io/en/stable/", "stacmap.readthedocs.io/en/latest/tutorials/quickstart.html", "nbviewer.org/github/microsoft/PlanetaryComputerExamples/blob/main/tutorials/interactive-browser.ipynb"]

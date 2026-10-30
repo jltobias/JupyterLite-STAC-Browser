@@ -1,6 +1,6 @@
 # Start in the browser
 
-Open the site’s **Explorer** for the map, or **Run notebooks** for JupyterLite. In JupyterLite, open `01_launch_map.ipynb` and choose **Run → Run All Cells**. The kernel is **Python (Pyodide)**; initial startup downloads the runtime and can take a minute. Continue with the WorldPop and other-catalog tutorials in order.
+Open the site’s **Explorer** for the map, or **Run notebooks** for JupyterLite. In JupyterLite, open `01_launch_map.ipynb` and choose **Run → Run All Cells**. The kernel is **Python (Pyodide)**; initial startup downloads the runtime and can take a minute. Continue through the five tutorials: map launch, WorldPop, other catalogs/exports, RustGIS handoff, and GeoLibre handoff. Tutorials 04 and 05 each run independently and render explicit links; running their cells does not download raster bytes.
 
 JupyterLite stores notebook edits and new files in browser storage. Download anything you want to keep using the file browser’s context menu. Clearing site data can remove local changes. The hosted notebooks are templates, and your edits are not committed to GitHub.
 

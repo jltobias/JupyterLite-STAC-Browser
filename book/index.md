@@ -16,6 +16,6 @@ Map polygons represent **metadata coverage**, not a population raster or populat
 2. Choose `UGA`, set an East African bounding box, and search.
 3. Select a footprint, inspect the item, and follow its source and asset links when needed.
 4. Download GeoJSON and Search JSON.
-5. Open **Run notebooks** to launch the map from Python and reproduce a bounded search.
+5. Open **Run notebooks** to launch the map, reproduce bounded searches, and follow tutorials 04/05 from an exact public COG candidate to an explicit provider download and RustGIS or GeoLibre action.
 
 No account, API key, or application server is needed. Internet access is required for the initial Python runtime download, API requests, and map tiles. This is not an offline GIS or a raster analysis service.

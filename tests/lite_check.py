@@ -59,7 +59,8 @@ def main():
                 items = copy.deepcopy(json.loads((ROOT / "tests/fixtures/items.json").read_text(encoding="utf-8")))
                 items["features"] = [items["features"][0]]
                 items["features"][0]["collection"] = "UGA"
-                items["features"][0]["assets"]["data"]["href"] = "https://download-fixture.test/population.tif"
+                items["features"][0]["assets"]["data"].update({
+                    "href": "https://download-fixture.test/population.tif", "roles": ["data"], "type": "image/tiff"})
                 items["links"] = []
 
                 def fixture(route):
@@ -96,11 +97,15 @@ def main():
                 ("01_launch_map.ipynb", "browser runtime"),
                 ("02_worldpop_search.ipynb", "Saved worldpop-items.geojson"),
                 ("03_other_catalogs_and_export.ipynb", "Reproducible query:"),
+                ("04_discover_download_rustgis.ipynb", "RustGIS workflow ready"),
+                ("05_discover_download_geolibre.ipynb", "GeoLibre workflow ready"),
             ]
             if args.copernicus:
-                notebooks = notebooks[2:]
+                notebooks = [notebooks[2]]
             for notebook, expected in notebooks:
                 searches.clear()
+                if args.fixtures:
+                    asset_requests.clear()
                 print(f"Opening {notebook}", flush=True)
                 document = json.loads((ROOT / '_site/lite/files' / notebook).read_text(encoding='utf-8'))
                 heading = ''.join(document['cells'][0]['source']).splitlines()[0].removeprefix('# ')
@@ -185,6 +190,32 @@ print('Spatial replay passed: bbox, polygon, none')
                     assert (ROOT / '_site/lite/files/public-catalogs.json').read_bytes() == (ROOT / 'web/public-catalogs.json').read_bytes()
                     assert any(f"Directory: {len(snapshot['catalogs'])} public listings; fetched {snapshot['fetched_at']}" in output for output in outputs), outputs
                     assert any(snapshot['source'] in output and snapshot['api'] in output for output in outputs), outputs
+                if args.fixtures and notebook.startswith(('04', '05')):
+                    assert not asset_requests, f'{notebook} must not fetch asset bytes before action: {asset_requests}'
+                    assert len(searches) == 1, searches
+                    tutorial_query = searches[0]
+                    assert tutorial_query.get('collections') == ['sentinel-2-l2a'], tutorial_query
+                    assert tutorial_query.get('limit') == ['1'], tutorial_query
+                    assert [float(value) for value in tutorial_query['bbox'][0].split(',')] == [-123.1, 37.2, -121.8, 38.1]
+                    assert tutorial_query['datetime'][0].startswith('2024-06-01T00:00:00Z/2024-06-15T23:59:59.999999Z')
+                    output = page.locator('.jp-NotebookPanel:visible .jp-OutputArea-output')
+                    download_link = output.get_by_role('link', name='Download selected GeoTIFF/COG candidate', exact=True)
+                    destination_name = 'Add exact candidate to RustGIS ↗' if notebook.startswith('04') else 'Check & add exact asset to GeoLibre ↗'
+                    destination_link = output.get_by_role('link', name=destination_name, exact=True)
+                    expect(download_link).to_have_count(1)
+                    expect(destination_link).to_have_count(1)
+                    expect(download_link).to_have_attribute('href', 'https://download-fixture.test/population.tif')
+                    destination = destination_link.get_attribute('href')
+                    destination_parts = urlsplit(destination)
+                    destination_query = parse_qs(destination_parts.query, keep_blank_values=True)
+                    if notebook.startswith('04'):
+                        assert (destination_parts.scheme, destination_parts.netloc, destination_parts.path) == ('https', 'web.rustgis.app', '/')
+                        assert destination_query == {'blank': [''], 'data': ['https://download-fixture.test/population.tif']}
+                    else:
+                        expected_bridge = urlsplit(base.rstrip('/') + '/explorer/geolibre-bridge.html')
+                        assert (destination_parts.scheme, destination_parts.netloc, destination_parts.path) == (
+                            expected_bridge.scheme, expected_bridge.netloc, expected_bridge.path)
+                        assert destination_query == {'data': ['https://download-fixture.test/population.tif'], 'kind': ['cog']}
                 if args.copernicus:
                     assert any("Source root: https://stac.dataspace.copernicus.eu/v1" in output for output in outputs), outputs
                     assert any("Saved earthsearch-items.geojson" in output for output in outputs), outputs
