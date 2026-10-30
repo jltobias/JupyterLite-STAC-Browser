@@ -1,6 +1,6 @@
 # GeoLibre handoff
 
-The Explorer can open a discovered public asset in [GeoLibre Web](https://web.geolibre.app/) without downloading it through this site. Select an Item, find the intended asset under **Download dataset**, and choose **Add to GeoLibre**. A new tab receives the exact resolved address through GeoLibre's documented `data` parameter. Creating and displaying the action makes no request for asset bytes; GeoLibre fetches the resource only after you follow the link.
+The Explorer can open a discovered public asset in [GeoLibre Web](https://web.geolibre.app/) without proxying it through this site. Select an Item, find the intended asset under **Download dataset**, and choose **Check & add to GeoLibre**. Creating and displaying the action makes no request for asset bytes. Your click opens a same-origin compatibility page, which checks browser access before continuing to the exact resolved address through GeoLibre's documented `data` parameter.
 
 ## Eligible assets
 
@@ -16,9 +16,19 @@ GeoLibre dispatches GeoParquet from `.parquet` or `.geoparquet`, PMTiles from `.
 
 Generic ZIP archives, plain `application/json`, FlatGeobuf, NetCDF, JPEG 2000, and unknown formats are not sent through this direct contract. A `.json` asset is accepted only when its media type explicitly declares GeoJSON. GeoLibre can support other formats through separate interactive tools or services, but this button only represents the documented `data` workflow.
 
-## Browser and provider requirements
+## Compatibility check and local fallback
 
-The provider must allow the `web.geolibre.app` browser origin to read the asset through CORS. COG, GeoParquet, PMTiles, and COPC streaming should support HTTP byte-range requests. GeoLibre downloads plain LAS/LAZ files as a whole and refuses one when the server reports a size above 250 MB; COPC is preferable for large point clouds. These are destination/provider behaviors, not guarantees made by the Explorer.
+After activation, the bridge issues an HTTPS `GET` for `bytes=0-0` with credentials omitted and cancels the response body as soon as the headers arrive. A COG candidate, GeoParquet, PMTiles, or COPC address must return HTTP 206 before the bridge continues. Whole-file GeoJSON, EPT, LAS, and LAZ may return HTTP 200. The check never downloads the complete asset deliberately and is bounded by a timeout.
+
+If the request is readable from the Explorer origin, and Range is honored where required, the bridge immediately redirects to GeoLibre's exact `data` deep link. This is evidence about the selected address, not a guarantee: origin-specific CORS can treat GeoLibre differently, EPT can reference additional resources with their own policies, and GeoLibre still enforces file-size and format-validity limits. Otherwise the bridge explains that browser CORS, Range, TLS, or network policy prevented verification and offers three choices:
+
+1. Download the exact selected asset with the normal provider link.
+2. Open GeoLibre and drag the downloaded file onto the map, or use **Add data** and choose the corresponding raster, vector, or point-cloud file layer.
+3. Choose **Try remote URL anyway** when the bridge may be conservative. A provider can permit the `web.geolibre.app` origin while rejecting this Explorer's origin.
+
+A reproduced WorldPop TIFF accepted a normal browser download but returned HTTP 200 to the one-byte Range request and omitted `Access-Control-Allow-Origin`. That response cannot support GeoLibre's browser fetch. Navigation downloads are governed differently from cross-origin JavaScript fetches, so a working Download link does not prove that remote layer loading will work. The bridge does not claim that a filename ending in `.tif` is actually cloud optimized.
+
+GeoLibre downloads plain LAS/LAZ files as a whole and refuses one when the server reports a size above 250 MB; COPC is preferable for large point clouds. Provider behavior remains authoritative after the handoff.
 
 ## Credentials stay here
 
@@ -28,6 +38,6 @@ GeoLibre also documents a `stac` parameter, but it opens a static catalog, STAC 
 
 ## Evidence and attribution
 
-This implementation was checked against [`jltobias/JupyterLite-GeoLibre-GeoAI@dda3a4667a1267b5ac4858723c46d8c0c82cb7a6`](https://github.com/jltobias/JupyterLite-GeoLibre-GeoAI/tree/dda3a4667a1267b5ac4858723c46d8c0c82cb7a6) and upstream [`opengeos/GeoLibre@4c47d00b5e0b308aed25c2d9a4e69de49e79904e`](https://github.com/opengeos/GeoLibre/tree/4c47d00b5e0b308aed25c2d9a4e69de49e79904e). The upstream [Embedding & Sharing guide](https://github.com/opengeos/GeoLibre/blob/4c47d00b5e0b308aed25c2d9a4e69de49e79904e/docs/user-guide/embedding.md) defines the URL contract and operational limits. No GeoLibre source code is copied into this project.
+This implementation was checked against [`jltobias/JupyterLite-GeoLibre-GeoAI@dda3a4667a1267b5ac4858723c46d8c0c82cb7a6`](https://github.com/jltobias/JupyterLite-GeoLibre-GeoAI/tree/dda3a4667a1267b5ac4858723c46d8c0c82cb7a6) and upstream [`opengeos/GeoLibre@b08ed24b60221a3989824cea4678868dfbcc272b`](https://github.com/opengeos/GeoLibre/tree/b08ed24b60221a3989824cea4678868dfbcc272b). The upstream [Embedding & Sharing guide](https://github.com/opengeos/GeoLibre/blob/b08ed24b60221a3989824cea4678868dfbcc272b/docs/user-guide/embedding.md) defines the URL contract and operational limits. No GeoLibre source code is copied into this project.
 
 When publishing results, cite GeoLibre and the original dataset provider. A STAC catalog, this Explorer, and GeoLibre do not replace the asset's license or required attribution.

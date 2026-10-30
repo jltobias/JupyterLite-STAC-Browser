@@ -2,7 +2,7 @@
 import copy
 import json
 from pathlib import Path
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, urlencode, urljoin, urlsplit
 
 from playwright.sync_api import expect
 
@@ -32,6 +32,7 @@ def check_downloads(page, catalog, items):
         'invalid': None,
     }
     asset_requests = []
+    asset_request_headers = []
 
     def fixture(route):
         path = urlsplit(route.request.url).path
@@ -41,9 +42,13 @@ def check_downloads(page, catalog, items):
             data = {'type': 'FeatureCollection', 'features': [item], 'links': []}
         else:
             asset_requests.append(route.request.url)
-            # No Access-Control-Allow-Origin: navigation downloads do not need fetch CORS.
+            asset_request_headers.append(route.request.headers)
+            # Expose only the compatibility probe so this fixture deterministically tests ignored Range.
+            headers = {'Content-Disposition': 'attachment; filename="population.tif"'}
+            if route.request.headers.get('range'):
+                headers['Access-Control-Allow-Origin'] = '*'
             route.fulfill(body=ATTACHMENT, content_type='application/octet-stream',
-                          headers={'Content-Disposition': 'attachment; filename="population.tif"'})
+                          headers=headers)
             return
         route.fulfill(body=json.dumps(data), content_type='application/json',
                       headers={'Access-Control-Allow-Origin': '*'})
@@ -79,8 +84,10 @@ def check_downloads(page, catalog, items):
     geolibre_asset = section.get_by_role('link', name='Add Population raster to GeoLibre', exact=True)
     expect(geolibre_asset).to_have_attribute('target', '_blank')
     expect(geolibre_asset).to_have_attribute('rel', 'noopener noreferrer')
-    geolibre_query = parse_qs(urlsplit(geolibre_asset.get_attribute('href')).query, keep_blank_values=True)
-    assert geolibre_query == {'data': [host + '/items/data.tif']}
+    geolibre_target = urlsplit(geolibre_asset.get_attribute('href'))
+    assert geolibre_target.path.endswith('/explorer/geolibre-bridge.html')
+    geolibre_query = parse_qs(geolibre_target.query, keep_blank_values=True)
+    assert geolibre_query == {'data': [host + '/items/data.tif'], 'kind': ['cog']}
     rustgis_item = page.get_by_role('link', name=f'Open STAC Item {item["id"]} in RustGIS', exact=True)
     expect(rustgis_item).to_have_attribute('target', '_blank')
     expect(rustgis_item).to_have_attribute('rel', 'noopener noreferrer')
@@ -89,6 +96,58 @@ def check_downloads(page, catalog, items):
     assert page.locator('#metadata img, #metadata script, #metadata a[href^="javascript:"]').count() == 0
     assert section.locator('a[href*="user:secret"]').count() == 0
     assert not asset_requests, 'Selecting metadata must never fetch assets'
+
+    # The post-click bridge detects a WorldPop-like ignored Range and keeps a usable local workflow.
+    with page.context.expect_page() as opened:
+        geolibre_asset.click()
+    bridge = opened.value
+    expect(bridge.locator('body')).to_have_attribute('data-state', 'fallback')
+    expect(bridge.get_by_role('status')).to_have_text('Remote browser access could not be verified.')
+    expect(bridge.locator('#explanation')).to_contain_text('Range')
+    expect(bridge.get_by_role('link', name='Download the selected dataset')).to_have_attribute('href', host + '/items/data.tif')
+    expect(bridge.get_by_role('link', name='Open GeoLibre Web')).to_have_attribute('href', 'https://web.geolibre.app/')
+    expected_remote = 'https://web.geolibre.app/?' + urlencode({'data': host + '/items/data.tif'})
+    expect(bridge.locator('#try-remote')).to_have_attribute('href', expected_remote)
+    assert asset_requests == [host + '/items/data.tif']
+    assert asset_request_headers[0].get('range') == 'bytes=0-0'
+    assert 'browser-secret' not in bridge.locator('body').inner_text()
+    bridge.close()
+    asset_requests.clear()
+    asset_request_headers.clear()
+
+    # A CORS-and-Range-ready cloud asset redirects to the exact GeoLibre data contract.
+    ready_host = 'https://bridge-ready.test'
+    ready_requests = []
+    def ready_asset(route):
+        ready_requests.append({'url': route.request.url, 'headers': route.request.headers})
+        route.fulfill(status=206, body='x', content_type='image/tiff', headers={
+            'Access-Control-Allow-Origin': '*', 'Accept-Ranges': 'bytes', 'Content-Range': 'bytes 0-0/1'})
+    def geolibre_page(route):
+        route.fulfill(status=200, content_type='text/html', body='<h1>Synthetic GeoLibre destination</h1>')
+    page.context.route(ready_host + '/**', ready_asset)
+    page.context.route('https://web.geolibre.app/**', geolibre_page)
+    ready_source = ready_host + '/earth-search.tif'
+    ready_bridge = urljoin(page.url, 'geolibre-bridge.html?' + urlencode({'data': ready_source, 'kind': 'cog'}))
+    with page.context.expect_page() as opened:
+        page.evaluate("url => window.open(url, '_blank')", ready_bridge)
+    compatible = opened.value
+    ready_destination = 'https://web.geolibre.app/?' + urlencode({'data': ready_source})
+    expect(compatible).to_have_url(ready_destination)
+    expect(compatible.get_by_role('heading', name='Synthetic GeoLibre destination')).to_be_visible()
+    assert len(ready_requests) == 1 and ready_requests[0]['url'] == ready_source
+    assert ready_requests[0]['headers'].get('range') == 'bytes=0-0'
+    compatible.close()
+
+    # Invalid bridge state is fail-closed and sends no asset request.
+    with page.context.expect_page() as opened:
+        page.evaluate("url => window.open(url, '_blank')", urljoin(page.url, 'geolibre-bridge.html?data=' + ready_source))
+    invalid = opened.value
+    expect(invalid.locator('body')).to_have_attribute('data-state', 'invalid')
+    expect(invalid.locator('#explanation')).to_contain_text('No asset request was sent')
+    assert len(ready_requests) == 1 and not asset_requests
+    invalid.close()
+    page.context.unroute(ready_host + '/**', ready_asset)
+    page.context.unroute('https://web.geolibre.app/**', geolibre_page)
     population = section.locator('li').filter(has_text='Population raster')
     with page.expect_download() as handoff_download:
         population.get_by_role('button', name='Download FieldWork selection (.json)').click()
@@ -198,7 +257,7 @@ def check_downloads(page, catalog, items):
             assert alternate_query['data'] == [host + '/items/public.tif']
             expect(section.locator('.geolibre-add')).to_have_count(1)
             geolibre_query = parse_qs(urlsplit(section.locator('.geolibre-add').get_attribute('href')).query)
-            assert geolibre_query == {'data': [host + '/items/public.tif']}
+            assert geolibre_query == {'data': [host + '/items/public.tif'], 'kind': ['cog']}
         with page.expect_download() as result:
             page.locator('#export-geojson').click()
         exported = json.loads(Path(result.value.path()).read_text())['features'][0]['assets']['data']

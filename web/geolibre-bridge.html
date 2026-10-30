@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src https:; img-src 'none'; style-src 'self'; script-src 'self'; base-uri 'none'; form-action 'none'">
+  <title>GeoLibre compatibility check - STAC Field Guide</title>
+  <link rel="stylesheet" href="geolibre-bridge.css">
+</head>
+<body data-state="checking">
+  <main class="bridge-shell">
+    <a class="brand" href="./">STAC <span>FIELD GUIDE</span></a>
+    <p class="eyebrow">GEOLIBRE HANDOFF</p>
+    <h1 id="status" role="status" aria-live="polite">Checking browser access...</h1>
+    <p id="explanation">After your click, this check requests only byte 0 and cancels the response as soon as headers arrive. A provider that ignores Range may begin sending more before cancellation. No credentials are sent.</p>
+    <p class="source-label">Selected asset</p>
+    <code id="source"></code>
+
+    <section id="fallback" hidden aria-labelledby="fallback-heading">
+      <h2 id="fallback-heading">Use a local file instead</h2>
+      <ol>
+        <li><a id="download" class="primary" target="_blank" rel="noopener noreferrer" download>Download the selected dataset</a></li>
+        <li><a id="open-geolibre" target="_blank" rel="noopener noreferrer">Open GeoLibre Web</a></li>
+        <li>Drag the downloaded file onto the GeoLibre map, or use <strong>Add data</strong> and choose the matching file layer.</li>
+      </ol>
+      <p class="hint">If the dataset opens in a browser tab instead of downloading, use the browser's Save command first.</p>
+      <details>
+        <summary>Try the remote URL anyway</summary>
+        <p>The check can be conservative when a provider allows GeoLibre's origin but not this Explorer's origin. The provider may still reject the request.</p>
+        <a id="try-remote" target="_blank" rel="noopener noreferrer">Try remote loading in GeoLibre</a>
+      </details>
+    </section>
+
+    <section id="invalid" hidden>
+      <a href="./">Return to the STAC Explorer</a>
+    </section>
+  </main>
+  <script type="module" src="geolibre-bridge.js"></script>
+</body>
+</html>

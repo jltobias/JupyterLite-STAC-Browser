@@ -6,7 +6,7 @@ import {copernicusSubset} from './copernicus-subset.js';
 import {CopernicusSession, isProtectedURL, readProtectedRange, downloadOriginal, originalFilename} from './copernicus-session.js';
 import {buildFieldworkSelection, assessFieldworkRaster, buildFieldworkRasterHandoff, sanitizeExport, sanitizedURL} from './fieldwork-handoff.js';
 import {rustGISAssetHandoff, rustGISItemHandoff} from './rustgis-handoff.js';
-import {geoLibreAssetHandoff} from './geolibre-handoff.js';
+import {geoLibreAssetHandoff, geoLibreBridgeURL} from './geolibre-handoff.js';
 const $ = id => document.getElementById(id);
 const client = new STACClient();
 L.PM.setOptIn(true);
@@ -487,10 +487,10 @@ function datasetDownloads(item) {
     const geolibreRoles = Object.prototype.hasOwnProperty.call(asset, 'roles') ? asset.roles : roles;
     const geolibre = geoLibreAssetAction(asset, access, base, geolibreRoles);
     if (geolibre.available) {
-      const link = addLink(li, 'Add to GeoLibre ↗', geolibre.href);
+      const link = addLink(li, 'Check & add to GeoLibre ↗', geoLibreBridgeURL(geolibre, document.baseURI));
       link.className = 'geolibre-add';
       link.setAttribute('aria-label', `Add ${label} to GeoLibre`);
-      li.append(el('small', 'Opens this exact public asset in GeoLibre Web. Its server must allow browser CORS; COG, GeoParquet, PMTiles, and COPC streaming also need Range access.'));
+      li.append(el('small', 'Checks browser CORS and Range access after you click. Compatible assets continue to GeoLibre; otherwise you can download and import the file locally or try the remote URL anyway.'));
     } else li.append(el('small', geolibre.reason, 'geolibre-unavailable'));
     const fieldwork = el('button', 'Download FieldWork selection (.json)', 'fieldwork-selection-download'); fieldwork.type = 'button';
     fieldwork.onclick = () => {

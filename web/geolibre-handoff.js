@@ -8,6 +8,7 @@ const GEOJSON_TYPES = new Set(['application/geo+json', 'application/vnd.geo+json
 const LIDAR_TYPES = new Set([
   'application/vnd.las', 'application/vnd.laz', 'application/vnd.laszip', 'application/vnd.laszip+copc',
 ]);
+const COPC_TYPE = 'application/vnd.laszip+copc';
 const CREDENTIAL_PARAMETER = /^(?:password|passwd|authorization|auth|auth_token|bearer|bearer_token|credential|secret|jwt|ticket|private_token|session|sessionid|session_id|sessionkey|session_key|session_token|sid)$/i;
 
 function mediaType(value) {
@@ -32,17 +33,19 @@ function isProtectedCopernicus(url) {
 function format(source, declaredType) {
   const type = mediaType(declaredType), path = source.pathname.toLowerCase();
   if (/netcdf|jpeg2000|jp2/.test(type) || /\.(?:nc|nc4|cdf|jp2|j2k)$/i.test(path)) return null;
-  if (path.endsWith('/ept.json') || path === 'ept.json') return {kind: 'ept'};
-  if (/\.(?:las|laz)$/i.test(path)) return {kind: 'lidar'};
-  if (/\.(?:tif|tiff|cog)$/i.test(path)) return {kind: 'cog'};
-  if (/\.(?:parquet|geoparquet)$/i.test(path)) return {kind: 'geoparquet'};
-  if (path.endsWith('.pmtiles')) return {kind: 'pmtiles'};
-  if (path.endsWith('.geojson')) return {kind: 'geojson'};
-  if (path.endsWith('.json') && GEOJSON_TYPES.has(type)) return {kind: 'geojson'};
+  if (path.endsWith('/ept.json') || path === 'ept.json') return {kind: 'ept', requiresRange: false};
+  if (/\.(?:las|laz)$/i.test(path)) {
+    return {kind: 'lidar', requiresRange: /\.copc\.laz$/i.test(path) || type === COPC_TYPE};
+  }
+  if (/\.(?:tif|tiff|cog)$/i.test(path)) return {kind: 'cog', requiresRange: true};
+  if (/\.(?:parquet|geoparquet)$/i.test(path)) return {kind: 'geoparquet', requiresRange: true};
+  if (path.endsWith('.pmtiles')) return {kind: 'pmtiles', requiresRange: true};
+  if (path.endsWith('.geojson')) return {kind: 'geojson', requiresRange: false};
+  if (path.endsWith('.json') && GEOJSON_TYPES.has(type)) return {kind: 'geojson', requiresRange: false};
   const basename = path.split('/').filter(Boolean).at(-1) || '';
   if (!basename || basename.includes('.')) return null;
-  if (LIDAR_TYPES.has(type)) return {kind: 'lidar', dataType: 'lidar'};
-  if (GEOJSON_TYPES.has(type)) return {kind: 'geojson'};
+  if (LIDAR_TYPES.has(type)) return {kind: 'lidar', dataType: 'lidar', requiresRange: type === COPC_TYPE};
+  if (GEOJSON_TYPES.has(type)) return {kind: 'geojson', requiresRange: false};
   return null;
 }
 
@@ -51,6 +54,21 @@ function destination(source, dataType) {
   url.searchParams.set('data', source);
   if (dataType) url.searchParams.set('dataType', dataType);
   return url.href;
+}
+
+export function geoLibreBridgeURL(handoff, pageURL) {
+  if (!handoff?.available || typeof handoff.source !== 'string' || typeof handoff.kind !== 'string') {
+    throw new Error('A valid GeoLibre handoff is required.');
+  }
+  const page = new URL(pageURL);
+  if (!['http:', 'https:'].includes(page.protocol) || page.username || page.password) {
+    throw new Error('The GeoLibre compatibility bridge needs an HTTP(S) page URL.');
+  }
+  const bridge = new URL('./geolibre-bridge.html', page);
+  bridge.searchParams.set('data', handoff.source);
+  const bridgeKind = handoff.kind === 'lidar' && handoff.requiresRange ? 'copc' : handoff.kind;
+  bridge.searchParams.set('kind', bridgeKind);
+  return bridge.href;
 }
 
 export function geoLibreAssetHandoff({href, base, type, roles, authRefs = []} = {}) {
@@ -82,5 +100,6 @@ export function geoLibreAssetHandoff({href, base, type, roles, authRefs = []} = 
   const supported = format(source, type);
   if (!supported) return unavailable('GeoLibre Web does not directly support this declared asset format.');
   return {available: true, source: sanitized.href, kind: supported.kind,
-    dataType: supported.dataType || null, href: destination(sanitized.href, supported.dataType)};
+    dataType: supported.dataType || null, requiresRange: supported.requiresRange,
+    href: destination(sanitized.href, supported.dataType)};
 }

@@ -63,7 +63,7 @@ def main():
     env["PATH"] = str(Path(sys.executable).parent) + os.pathsep + env.get("PATH", "")
     run(sys.executable, "-m", "jupyter_book", "build", "--html", "--strict", cwd=book, env=env)
     shutil.copytree(book / "_build" / "html", output / "book")
-    for required in ["index.html", "explorer/index.html", "explorer/public-catalogs.json", "lite/lab/index.html", "book/index.html", "lite/files/stac_browser.py", "lite/files/site-config.json", "lite/files/public-catalogs.json"]:
+    for required in ["index.html", "explorer/index.html", "explorer/geolibre-bridge.html", "explorer/geolibre-bridge.js", "explorer/geolibre-bridge.css", "explorer/public-catalogs.json", "lite/lab/index.html", "book/index.html", "lite/files/stac_browser.py", "lite/files/site-config.json", "lite/files/public-catalogs.json"]:
         if not (output / required).is_file():
             raise RuntimeError(f"Build is missing {required}")
     print(f"Built {output}. Preview with: python -m http.server 8000 --directory _site")
