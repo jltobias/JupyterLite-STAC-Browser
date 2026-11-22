@@ -10,6 +10,15 @@ import build
 
 
 class StagingTests(unittest.TestCase):
+    def test_relative_redirect_preserves_the_current_origin_and_base_path(self):
+        with tempfile.TemporaryDirectory() as temp:
+            redirect = Path(temp) / "book" / "explorer" / "index.html"
+            build.write_relative_redirect(redirect, "../../explorer/")
+            text = redirect.read_text(encoding="utf-8")
+            self.assertIn('url=../../explorer/', text)
+            self.assertIn('new URL("../../explorer/", location.href)', text)
+            self.assertNotIn("https://", text)
+
     def test_deleted_sources_and_old_generated_pages_are_removed(self):
         with tempfile.TemporaryDirectory() as temp, patch.object(build, "ROOT", Path(temp)):
             for name in ["lite-contents", "book-source"]:

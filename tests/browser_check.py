@@ -432,9 +432,16 @@ def main():
                 page.goto(address + "/book/")
                 expect(page.locator("body")).to_contain_text("A world of data")
                 book_explorer = page.get_by_role("link", name="Explorer", exact=True).first
-                assert page.evaluate("href => new URL(href, location.href).pathname", book_explorer.get_attribute("href")) == base + "/explorer"
+                assert page.evaluate("href => new URL(href, location.href).pathname", book_explorer.get_attribute("href")) == base + "/book/explorer"
+                book_explorer.click()
+                page.wait_for_url(address + "/explorer/")
+                assert page.url.endswith(base + "/explorer/")
+                page.goto(address + "/book/")
                 book_notebooks = page.get_by_role("link", name="Run notebooks", exact=True).first
-                assert page.evaluate("href => new URL(href, location.href).pathname", book_notebooks.get_attribute("href")) == base + "/lite/lab/index.html"
+                assert page.evaluate("href => new URL(href, location.href).pathname", book_notebooks.get_attribute("href")) == base + "/book/lite/lab/index.html"
+                book_notebooks.click()
+                page.wait_for_url(address + "/lite/lab/index.html")
+                assert page.url.endswith(base + "/lite/lab/index.html")
             if args.live:
                 page.unroute("https://api.stac.worldpop.org/**", fixture)
                 live = page.evaluate("""async () => {const root=await fetch('https://api.stac.worldpop.org').then(r=>r.json());const response=await fetch('https://api.stac.worldpop.org/search?collections=UGA&bbox=29,-2,35,5&limit=1');const items=await response.json();return {root:root.type,status:response.status,count:items.features?.length};}""")

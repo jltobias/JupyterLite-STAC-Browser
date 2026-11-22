@@ -2,6 +2,7 @@
 import {sanitizedURL} from './fieldwork-handoff.js';
 
 export const RUSTGIS_WEB_URL = 'https://web.rustgis.app/';
+export const RUSTGIS_LOCAL_IMPORT_URL = `${RUSTGIS_WEB_URL}?blank`;
 
 const SUPPORTING_ROLES = new Set(['thumbnail', 'overview', 'metadata']);
 const SUPPORTED_MEDIA_TYPES = new Set([
@@ -51,6 +52,19 @@ function destination(parameter, value) {
 }
 
 function unavailable(reason) { return {available: false, reason}; }
+
+/**
+ * RustGIS can fetch public URLs through `data=`, but a crop created in this
+ * page is a browser-local file. Open a blank project and let the user choose
+ * the downloaded GeoTIFF with RustGIS's documented file picker or drag/drop.
+ */
+export function rustGISLocalFileHandoff() {
+  return {
+    available: true,
+    href: RUSTGIS_LOCAL_IMPORT_URL,
+    instructions: 'In RustGIS, choose Add Data and select the downloaded GeoTIFF, or drag the file onto the map.',
+  };
+}
 
 function authenticationDeclared(value) {
   return !Array.isArray(value) || value.length > 0;

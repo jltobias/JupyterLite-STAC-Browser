@@ -14,8 +14,8 @@ Map polygons represent **metadata coverage**, not a population raster or populat
 
 1. Open **Explorer** and wait for WorldPop collections to load.
 2. Choose `UGA`, set an East African bounding box, and search.
-3. Select a footprint, inspect the item, and follow its source and asset links when needed.
-4. Download GeoJSON and Search JSON.
-5. Open **Run notebooks** to launch the map, reproduce bounded searches, and follow tutorials 04/05 from an exact public COG candidate to an explicit provider download and RustGIS or GeoLibre action.
+3. Select a footprint, refine the study area, and use **Clip study bbox** to make a local GeoTIFF when the raster supports browser ranges.
+4. Choose **Clip, download & open RustGIS**, then select or drag the named GeoTIFF into the blank RustGIS project for examination and analysis.
+5. Download GeoJSON and Search JSON, then open **Run notebooks** to reproduce the discovery and follow the RustGIS or GeoLibre tutorials.
 
 No account, API key, or application server is needed. Internet access is required for the initial Python runtime download, API requests, and map tiles. This is not an offline GIS or a raster analysis service.

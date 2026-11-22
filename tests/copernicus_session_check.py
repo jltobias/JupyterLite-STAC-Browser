@@ -148,6 +148,27 @@ def check_copernicus_session(page, catalog, original):
         page.get_by_role('button', name='Download crop provenance (.json)').click()
     assert token not in Path(provenance.value.path()).read_text()
 
+    # The combined local-file workflow downloads the authenticated crop but
+    # sends neither the source address nor the in-memory token to RustGIS.
+    rustgis_requests = []
+    def rustgis_destination(route):
+        rustgis_requests.append({'url': route.request.url, 'headers': route.request.headers})
+        route.fulfill(status=200, content_type='text/html', body='<h1>Synthetic RustGIS</h1>')
+    page.context.route('https://web.rustgis.app/**', rustgis_destination)
+    with page.context.expect_page() as opened:
+        with page.expect_download() as combined:
+            page.locator('.asset-clip-rustgis').click()
+    rustgis = opened.value
+    expect(rustgis).to_have_url('https://web.rustgis.app/?blank')
+    combined_bytes = Path(combined.value.path()).read_bytes()
+    verify_crop(ATTACHMENT, combined_bytes)
+    assert token.encode() not in combined_bytes
+    assert [request['url'] for request in rustgis_requests] == ['https://web.rustgis.app/?blank']
+    assert 'authorization' not in rustgis_requests[0]['headers']
+    assert token not in page.locator('.crop-status').inner_text()
+    rustgis.close()
+    page.context.unroute('https://web.rustgis.app/**', rustgis_destination)
+
     # Unsupported picker -> bounded Blob path; the NC bytes and suffix survive.
     page.evaluate('window.showSaveFilePicker = undefined')
     load()
@@ -172,7 +193,7 @@ def check_copernicus_session(page, catalog, original):
     expect(page.locator('.protected-status').first).to_contain_text('Saved original file')
     assert page.evaluate('window.pickerCalls === 1 && window.pickerActivated')
     assert bytes(page.evaluate('async () => Array.from(new Uint8Array(await (await window.testHandle.getFile()).arrayBuffer()))')) == ATTACHMENT
-    assert len(downloads) == 3
+    assert len(downloads) == 4
 
     # Native stream close is finalization: disable Cancel and report a successful close.
     page.evaluate('''() => {
@@ -242,7 +263,9 @@ def check_copernicus_session(page, catalog, original):
     page.locator('#search').click()
     expect(page.locator('#search')).to_be_enabled()
     page.locator('.result-card').click()
-    public_clip = page.locator('.download-assets li').filter(has_text='Public fixture').locator('.asset-clip')
+    chooser = page.get_by_role('combobox', name='Raster asset to clip', exact=True)
+    chooser.select_option(label='Public fixture (public)')
+    public_clip = page.locator('.clip-workflow .asset-clip')
     public_clip.evaluate('(node) => { window.publicCropNode = node; }')
     delay_public[0] = True
     with page.expect_request(lambda request: request.url == item['assets']['public']['href']):
@@ -260,7 +283,16 @@ def check_copernicus_session(page, catalog, original):
             fulfill_raster(route)
     public_pending.clear()
     verify_crop(ATTACHMENT, Path(public_crop.value.path()).read_bytes())
-    expect(page.locator('.download-assets li').filter(has_text='Public fixture').locator('.crop-status')).to_contain_text('Saved')
+    expect(page.locator('.clip-workflow .crop-status')).to_contain_text('Prepared')
+    assert not page.evaluate('window.publicCropNode.isConnected')
+    expect(page.locator('.clip-asset-summary')).to_contain_text('Public fixture')
+    # A later session refresh keeps completed result/provenance controls while
+    # restoring the authenticated raster candidate.
+    load()
+    expect(page.locator('.clip-workflow .crop-status')).to_contain_text('Prepared')
+    expect(page.get_by_role('combobox', name='Raster asset to clip', exact=True).locator('option')).to_have_count(2)
+    page.locator('#copernicus-clear').click()
+    expect(page.locator('.clip-workflow .crop-status')).to_contain_text('Prepared')
     del item['assets']['public']
     page.locator('#search').click()
     expect(page.locator('#search')).to_be_enabled()

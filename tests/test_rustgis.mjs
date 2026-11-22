@@ -1,6 +1,16 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {RUSTGIS_WEB_URL, rustGISAssetHandoff, rustGISItemHandoff} from '../web/rustgis-handoff.js';
+import {RUSTGIS_WEB_URL, RUSTGIS_LOCAL_IMPORT_URL, rustGISAssetHandoff, rustGISItemHandoff, rustGISLocalFileHandoff} from '../web/rustgis-handoff.js';
+
+test('uses a blank RustGIS project for a downloaded local crop', () => {
+  const handoff = rustGISLocalFileHandoff();
+  assert.equal(handoff.available, true);
+  assert.equal(handoff.href, 'https://web.rustgis.app/?blank');
+  assert.equal(handoff.href, RUSTGIS_LOCAL_IMPORT_URL);
+  assert.match(handoff.instructions, /Add Data/);
+  assert.equal(new URL(handoff.href).searchParams.has('data'), false);
+  assert.doesNotMatch(JSON.stringify(handoff), /blob:|token|authorization/i);
+});
 
 test('builds exact public asset and Item handoffs', () => {
   const asset = rustGISAssetHandoff({href: './data.tif', base: 'https://catalog.test/items/one.json', type: 'image/tiff', roles: ['data']});

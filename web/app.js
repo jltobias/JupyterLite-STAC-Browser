@@ -5,7 +5,7 @@ import {startRasterClip} from './raster-clip.js';
 import {copernicusSubset} from './copernicus-subset.js';
 import {CopernicusSession, isProtectedURL, readProtectedRange, downloadOriginal, originalFilename} from './copernicus-session.js';
 import {buildFieldworkSelection, assessFieldworkRaster, buildFieldworkRasterHandoff, sanitizeExport, sanitizedURL} from './fieldwork-handoff.js';
-import {rustGISAssetHandoff, rustGISItemHandoff} from './rustgis-handoff.js';
+import {rustGISAssetHandoff, rustGISItemHandoff, rustGISLocalFileHandoff} from './rustgis-handoff.js';
 import {geoLibreAssetHandoff, geoLibreBridgeURL} from './geolibre-handoff.js';
 const $ = id => document.getElementById(id);
 const client = new STACClient();
@@ -17,7 +17,7 @@ const footprints = L.featureGroup().addTo(map);
 let itemLayers = new WeakMap();
 let busy = false, connected = false;
 let startEdited = false;
-let cropJob = null, cropSelection = 0;
+let cropJob = null, cropSelection = 0, cropRefreshPending = false, cropRustGISWindow = null;
 let selectedItem = null;
 const copernicusSession = new CopernicusSession(message => {
   $('copernicus-token').value = '';
@@ -31,6 +31,11 @@ const copernicusSession = new CopernicusSession(message => {
     }
     const help = updated.querySelector('.session-download-help');
     if (help) current?.querySelector('.session-download-help')?.replaceWith(help);
+    // Keep a running public crop attached. Refresh its candidate controls as
+    // soon as the worker settles, preserving any completed result controls.
+    if (cropJob) cropRefreshPending = true;
+    else replaceCropWorkflow(current, updated);
+    queueMicrotask(updateCropBounds);
   }
 });
 $('copernicus-form').onsubmit = event => {
@@ -40,8 +45,9 @@ $('copernicus-form').onsubmit = event => {
   finally { $('copernicus-token').value = ''; }
 };
 $('copernicus-clear').onclick = () => copernicusSession.clear();
-addEventListener('pagehide', () => { copernicusSession.clear(); cancelCrop(); });
+addEventListener('pagehide', () => { closeRustGISWindow(cropRustGISWindow); copernicusSession.clear(); cancelCrop(); });
 function cancelCrop(message = 'Crop canceled because the selection or settings changed. No file was saved.') {
+  closeRustGISWindow(cropRustGISWindow);
   copernicusSession.cancelJobs();
   cropJob?.cancel(message); cropJob = null;
 }
@@ -57,6 +63,18 @@ function queryChanged() {
 }
 const study = new StudyArea(map, {status, changed: queryChanged});
 function el(tag, text, className) { const n = document.createElement(tag); if (text != null) n.textContent = text; if (className) n.className = className; return n; }
+function replaceCropWorkflow(current, updated) {
+  const previous = current?.querySelector('.clip-workflow'), workflow = updated?.querySelector('.clip-workflow');
+  if (!previous || !workflow) return;
+  const priorStatus = previous.querySelector('.crop-status'), nextStatus = workflow.querySelector('.crop-status');
+  if (priorStatus?.hasChildNodes() && nextStatus) nextStatus.replaceWith(priorStatus);
+  previous.replaceWith(workflow);
+}
+function refreshCropWorkflow() {
+  if (!selectedItem) return;
+  replaceCropWorkflow(document.querySelector('.dataset-downloads'), datasetDownloads(selectedItem));
+  queueMicrotask(updateCropBounds);
+}
 function status(text, error = false) { $('status').textContent = text; $('status').className = error ? 'error' : ''; }
 function controls() {
   study.setBusy(busy);
@@ -215,10 +233,10 @@ function cropOption(li, {item, key, asset, href, supporting, auth, copernicus, a
   const authenticated = Boolean(authURL && copernicusSession.loaded);
   if (Array.isArray(asset.roles) && asset.roles.some(role => ['thumbnail', 'overview'].includes(role))) {
     li.append(el('small', 'Bbox clipping unavailable for previews and overviews; these are not source raster data.', 'clip-unavailable'));
-    return;
+    return null;
   }
   const subset = copernicus ? copernicusSubset(item, key, asset) : null;
-  if (subset?.unavailable) { li.append(el('small', subset.unavailable, 'clip-unavailable')); if (!authenticated || /netcdf/i.test(subset.unavailable)) return; }
+  if (subset?.unavailable) { li.append(el('small', subset.unavailable, 'clip-unavailable')); if (!authenticated || /netcdf/i.test(subset.unavailable)) return null; }
   if (subset?.create && !supporting) {
     li.append(el('small', `Provider bbox subset: NDVI 300m V2 · ${subset.date} · raw ${subset.band} (${subset.sampleType}). Sign-in required; Analytical GeoTIFF only.`, 'subset-help'));
     const prepare = el('button', 'Prepare Copernicus bbox subset', 'provider-subset'); prepare.type = 'button';
@@ -233,7 +251,7 @@ function cropOption(li, {item, key, asset, href, supporting, auth, copernicus, a
         result.append(el('small', 'The link sets the map view, date and raw-band script; it cannot carry the AOI. Sign in, import the downloaded GeoJSON with the Area of Interest upload control, then Image Download → Analytical → GeoTIFF. Select the custom script, original/native resolution and suitable CRS; verify the date and band. Provider export may resample/regrid and has size limits; its output is not guaranteed to match a source-pixel window. A rendered preview is not source data. If the exact date/product is unavailable, keep the original download.'));
       } catch (error) { result.append(el('small', error.message, 'error')); }
     };
-    li.append(prepare, result); if (!authenticated) return;
+    li.append(prepare, result); if (!authenticated) return null;
   }
   let validURL = false;
   try { href = safeURL(href); validURL = true; } catch { /* Preserve the existing access instructions. */ }
@@ -241,78 +259,183 @@ function cropOption(li, {item, key, asset, href, supporting, auth, copernicus, a
   const tiff = /(?:image\/(?:tiff|geotiff)|application\/geotiff)/i.test(asset.type || '') || /\.tiff?(?:[/?#)]|$)/i.test(href);
   if (supporting || !validURL || (auth && !authenticated) || !tiff || netcdf || (Array.isArray(asset.roles) && asset.roles.includes('archive'))) {
     li.append(el('small', netcdf ? 'NetCDF clipping unavailable: no verified NetCDF subset route is available. Keep the original .nc download; no GeoTIFF conversion is offered.' : auth ? 'Bbox clipping unavailable here: provider authentication or signing is required; use its access workflow.' : supporting ? 'Bbox clipping unavailable for previews and metadata; these are not source raster data.' : 'Bbox clipping unavailable for this format or access URL. Keep the original file download.', 'clip-unavailable'));
-    return;
+    return null;
   }
-  const clip = el('button', 'Clip study bbox → GeoTIFF', 'asset-clip'), cancel = el('button', 'Cancel crop', 'crop-cancel'), message = el('p', '', 'crop-status');
-  clip.type = cancel.type = 'button'; cancel.hidden = true; message.setAttribute('role', 'status'); message.setAttribute('aria-live', 'polite');
-  clip.disabled = Boolean(cropJob);
-  cancel.onclick = () => cancelCrop('Crop canceled. No file was saved.');
-  clip.onclick = async () => {
-    if (cropJob) return;
-    copernicusSession.cancelJobs();
-    let area;
-    try { area = study.clipSnapshot(); } catch (error) { message.textContent = error.message; return; }
-    const selected = cropSelection, frozenText = `Frozen bbox: ${area.bbox.join(', ')}. `;
-    message.textContent = frozenText + 'Reading raster headers…';
-    document.querySelectorAll('.asset-clip').forEach(button => { button.disabled = true; }); cancel.hidden = false;
-    let job, sessionJob;
-    try {
-      if (authenticated) sessionJob = copernicusSession.job();
-      const requestURL = authenticated ? authURL : href;
-      let publicSource = null, publicItemSource = null;
-      try { publicSource = sanitizedURL(requestURL, client.baseFor(item)).href; } catch { /* Worker validation reports unusable locations. */ }
-      try { const source = new URL(sanitizedURL(client.sourceFor(item)).href); source.search = ''; publicItemSource = source.href; } catch { /* Retain null rather than unsafe source metadata. */ }
-      job = startRasterClip({url: requestURL, bbox: area.bbox, ...(sessionJob ? {auth: sessionJob.auth()} : {}), provenance: {item_id: item.id, collection: item.collection,
-        item_datetime: item.properties?.datetime, asset_key: key, asset: sanitizeExport(asset), study_area: area,
-        source_url: publicSource, stac_root: sanitizeExport(client.url), item_source: publicItemSource, license: item.properties?.license || client.collections.find(c => c.id === item.collection)?.license}}, progress => {
-        if (selected !== cropSelection || !clip.isConnected || sessionJob?.signal.aborted) return;
-        if (progress.phase === 'estimate') message.textContent = frozenText + `Output: ${progress.width} × ${progress.height} pixels, EPSG:${progress.epsg}; extent ${progress.bounds.join(', ')}. About ${(progress.outputBytes / 2 ** 20).toFixed(2)} MiB plus metadata; ${progress.blocks} intersecting blocks.`;
-        else if (progress.phase === 'pixels') message.textContent = frozenText + `Reading block ${progress.completed}/${progress.blocks}; ${(progress.bytes / 2 ** 20).toFixed(2)} MiB transferred.`;
-        else if (progress.phase === 'write') message.textContent = frozenText + 'Writing source pixels and spatial metadata…';
-      });
-      cropJob = job;
-      sessionJob?.signal.addEventListener('abort', () => job.cancel('Session cleared, replaced, expired, or operation canceled. No file was saved.'), {once: true});
-      const result = await job.promise;
-      if (cropJob !== job || selected !== cropSelection || !clip.isConnected) return;
-      sessionJob?.assert();
-      const name = `${item.id}-${key}-bbox`.replace(/[^a-zA-Z0-9_.-]/g, '_').slice(0, 150);
-      saveBlob(name + '.tif', new Blob([result.buffer], {type: 'image/tiff'}));
-      message.textContent = frozenText + `Saved ${result.width} × ${result.height} pixels in EPSG:${result.epsg}. Actual output extent: ${result.bounds.join(', ')}. Pixel edges align to the source grid; all supported source bands and NoData are retained.`;
-      const provenance = el('button', 'Download crop provenance (.json)'); provenance.type = 'button'; provenance.onclick = () => download(name + '.json', result.provenance);
-      message.append(provenance);
-      const raster = {width: result.width, height: result.height, bands: result.bands, epsg: result.epsg, pixelIsArea: result.pixelIsArea,
-        northUp: result.northUp, geoKeys: result.geoKeys, modelTransformation: result.modelTransformation,
-        bounds: result.bounds, origin: result.origin, resolution: result.resolution};
-      const fieldwork = assessFieldworkRaster({...raster, byteCount: result.buffer.byteLength});
-      if (fieldwork.compatible) {
-        message.append(el('small', ' FieldWork-ready: explicit WGS84/PixelIsArea GeoKeys, no ModelTransformation, a consistent north-up CRS84 grid, one band, at most 262,144 cells and 5,000,000 bytes.'));
-        const sidecar = el('button', 'Download FieldWork raster handoff (.json)', 'fieldwork-raster-download'); sidecar.type = 'button';
-        sidecar.onclick = async () => {
-          sidecar.disabled = true;
-          try {
-            const handoff = await buildFieldworkRasterHandoff({buffer: result.buffer, raster, sourceLineage: result.provenance,
-              fieldworkProvenance: {
-                title: asset.title || item.properties?.title || String(item.id),
-                provider: (Array.isArray(item.properties?.providers) ? item.properties.providers : client.collections.find(c => c.id === item.collection)?.providers || []).map(value => value?.name).filter(Boolean).join(', '),
-                sourceURL: sanitizeExport(client.sourceFor(item)), downloadURL: publicSource, identifier: String(item.id),
-                citation: item.properties?.citation || '', license: item.properties?.license || client.collections.find(c => c.id === item.collection)?.license || '',
-                version: asset.version || item.properties?.version || '', temporalCoverage: item.properties?.datetime || item.properties?.start_datetime || '',
-                published: item.properties?.published || item.properties?.created || '', accessed: result.provenance.created_at?.slice(0, 10) || '',
-                units: asset['raster:bands']?.[0]?.unit || asset['eo:bands']?.[0]?.unit || '',
-                notes: 'Source-resolution crop prepared by JupyterLite STAC Browser. Descriptive metadata comes from STAC declarations and is not byte or format verification.',
-              },
-              clippingBoundary: {crs: 'CRS84', bbox: area.bbox}, acquisitionBoundary: {crs: `EPSG:${result.epsg}`, bounds: result.bounds}});
-            download(name + '-fieldwork.json', handoff);
-          } catch (error) { message.append(el('small', error.message, 'error')); }
-          finally { sidecar.disabled = false; }
-        };
-        message.append(sidecar);
-      } else message.append(el('small', ` Not claimed FieldWork-ready: ${fieldwork.reasons.join('; ')}.`));
-    } catch (error) { if (clip.isConnected) message.textContent = frozenText + error.message; }
-    finally { sessionJob?.finish(); if (cropJob === job) cropJob = null; cancel.hidden = true; document.querySelectorAll('.asset-clip').forEach(button => { button.disabled = Boolean(cropJob); }); }
-  };
-  li.append(clip, cancel, message);
+  li.append(el('small', 'This raster is available in the Clip study bbox workflow above.', 'clip-available'));
+  return {item, key, asset, href, authURL, authenticated, label: asset.title || key};
 }
+
+function beginRustGISWindow() {
+  const handoff = rustGISLocalFileHandoff();
+  const state = {handoff, popup: null, marker: `${Date.now()}-${Math.random()}`};
+  try { state.popup = window.open('about:blank', '_blank'); }
+  catch { return state; }
+  if (state.popup) {
+    try {
+      const popup = state.popup;
+      popup.document.title = 'Preparing clipped GeoTIFF for RustGIS';
+      popup.document.body.textContent = 'Preparing and downloading the clipped GeoTIFF…';
+      popup.document.body.dataset.stacClipPlaceholder = state.marker;
+      popup.opener = null;
+    } catch {
+      try { state.popup.close(); } catch { /* The partially opened tab may already be inaccessible. */ }
+      state.popup = null;
+    }
+  }
+  return state;
+}
+
+function ownsRustGISWindow(state) {
+  if (!state?.popup || state.popup.closed) return false;
+  try {
+    return state.popup.location.href === 'about:blank' &&
+      state.popup.document.body?.dataset.stacClipPlaceholder === state.marker;
+  } catch { return false; }
+}
+
+function closeRustGISWindow(state) {
+  try { if (ownsRustGISWindow(state)) state.popup.close(); } catch { /* The popup may already be cross-origin. */ }
+  if (cropRustGISWindow === state) cropRustGISWindow = null;
+}
+
+function finishRustGISWindow(state) {
+  if (!ownsRustGISWindow(state)) { if (cropRustGISWindow === state) cropRustGISWindow = null; return false; }
+  try {
+    state.popup.location.replace(state.handoff.href);
+    if (cropRustGISWindow === state) cropRustGISWindow = null;
+    return true;
+  } catch { if (cropRustGISWindow === state) cropRustGISWindow = null; return false; }
+}
+
+function promotedCropWorkflow(candidates) {
+  const workflow = el('section', null, 'clip-workflow');
+  workflow.setAttribute('aria-labelledby', 'clip-workflow-heading');
+  const heading = el('h4', 'Clip study bbox'); heading.id = 'clip-workflow-heading';
+  workflow.append(heading, el('p', '', 'crop-bounds'), el('p', 'Create a source-resolution GeoTIFF on the source pixel grid. Raster transfer starts only when you choose an action. Browser limits: 64 MiB output, 128 MiB transfer/decoded blocks, 16 MiB per block and two minutes per job.', 'download-help'));
+  if (!candidates.length) {
+    workflow.append(el('p', 'No directly clip-eligible GeoTIFF is available for this Item. See each asset below for format, authentication, or provider-subset guidance.', 'clip-unavailable'));
+    return workflow;
+  }
+  let chooser = null;
+  if (candidates.length > 1) {
+    const label = el('label', 'Raster asset to clip');
+    chooser = el('select'); chooser.setAttribute('aria-label', 'Raster asset to clip');
+    candidates.forEach((candidate, index) => chooser.append(new Option(`${candidate.label} (${candidate.key})`, String(index))));
+    label.append(chooser); workflow.append(label);
+  } else workflow.append(el('p', `Raster asset: ${candidates[0].label} (${candidates[0].key})`, 'clip-asset-summary'));
+  const actions = el('div', null, 'clip-actions');
+  const clip = el('button', 'Clip & download GeoTIFF', 'asset-clip');
+  const rustgis = el('button', 'Clip, download & open RustGIS', 'asset-clip-rustgis');
+  const cancel = el('button', 'Cancel crop', 'crop-cancel');
+  const message = el('p', '', 'crop-status');
+  for (const button of [clip, rustgis]) { button.type = 'button'; button.dataset.cropAction = ''; button.disabled = Boolean(cropJob); }
+  cancel.type = 'button'; cancel.hidden = true;
+  cancel.onclick = () => cancelCrop('Crop canceled. No file was saved or handed to RustGIS.');
+  message.setAttribute('role', 'status'); message.setAttribute('aria-live', 'polite');
+  const selected = () => candidates[Number(chooser?.value || 0)];
+  clip.onclick = () => performCrop(workflow, selected(), {cancel, message, chooser});
+  rustgis.onclick = () => {
+    const rustgisWindow = beginRustGISWindow();
+    performCrop(workflow, selected(), {cancel, message, chooser, rustgisWindow});
+  };
+  actions.append(clip, rustgis, cancel); workflow.append(actions, message);
+  return workflow;
+}
+
+async function performCrop(workflow, candidate, {cancel, message, chooser, rustgisWindow = null}) {
+  if (cropJob) { closeRustGISWindow(rustgisWindow); return; }
+  if (!candidate) { closeRustGISWindow(rustgisWindow); message.textContent = 'Choose a raster asset to clip.'; return; }
+  if (rustgisWindow?.popup) cropRustGISWindow = rustgisWindow;
+  copernicusSession.cancelJobs();
+  let area;
+  try { area = study.clipSnapshot(); }
+  catch (error) { closeRustGISWindow(rustgisWindow); message.textContent = error.message; return; }
+  const {item, key, asset, href, authURL, authenticated} = candidate;
+  const selected = cropSelection, frozenText = `Frozen bbox: ${area.bbox.join(', ')}. `;
+  const popupNotice = rustgisWindow && !rustgisWindow.popup
+    ? ' RustGIS popup was blocked; the crop will continue and a fallback link will appear when it finishes.' : '';
+  const report = text => frozenText + text + popupNotice;
+  message.textContent = report('Reading raster headers…');
+  document.querySelectorAll('[data-crop-action]').forEach(button => { button.disabled = true; });
+  if (chooser) chooser.disabled = true;
+  cancel.hidden = false;
+  let job, sessionJob;
+  try {
+    if (authenticated) sessionJob = copernicusSession.job();
+    const requestURL = authenticated ? authURL : href;
+    let publicSource = null, publicItemSource = null;
+    try { publicSource = sanitizedURL(requestURL, client.baseFor(item)).href; } catch { /* Worker validation reports unusable locations. */ }
+    try { const source = new URL(sanitizedURL(client.sourceFor(item)).href); source.search = ''; publicItemSource = source.href; } catch { /* Retain null rather than unsafe source metadata. */ }
+    job = startRasterClip({url: requestURL, bbox: area.bbox, ...(sessionJob ? {auth: sessionJob.auth()} : {}), provenance: {item_id: item.id, collection: item.collection,
+      item_datetime: item.properties?.datetime, asset_key: key, asset: sanitizeExport(asset), study_area: area,
+      source_url: publicSource, stac_root: sanitizeExport(client.url), item_source: publicItemSource, license: item.properties?.license || client.collections.find(c => c.id === item.collection)?.license}}, progress => {
+      if (selected !== cropSelection || !workflow.isConnected || sessionJob?.signal.aborted) return;
+      if (progress.phase === 'estimate') message.textContent = report(`Output: ${progress.width} × ${progress.height} pixels, EPSG:${progress.epsg}; extent ${progress.bounds.join(', ')}. About ${(progress.outputBytes / 2 ** 20).toFixed(2)} MiB plus metadata; ${progress.blocks} intersecting blocks.`);
+      else if (progress.phase === 'pixels') message.textContent = report(`Reading block ${progress.completed}/${progress.blocks}; ${(progress.bytes / 2 ** 20).toFixed(2)} MiB transferred.`);
+      else if (progress.phase === 'write') message.textContent = report('Writing source pixels and spatial metadata…');
+    });
+    cropJob = job;
+    sessionJob?.signal.addEventListener('abort', () => job.cancel('Session cleared, replaced, expired, or operation canceled. No file was saved.'), {once: true});
+    const result = await job.promise;
+    if (cropJob !== job || selected !== cropSelection || !workflow.isConnected) { closeRustGISWindow(rustgisWindow); return; }
+    sessionJob?.assert();
+    const name = `${item.id}-${key}-bbox`.replace(/[^a-zA-Z0-9_.-]/g, '_').slice(0, 150);
+    const filename = name + '.tif';
+    saveBlob(filename, new Blob([result.buffer], {type: 'image/tiff'}));
+    message.textContent = frozenText + `Prepared ${result.width} × ${result.height} pixels in EPSG:${result.epsg} and requested the browser download. Actual output extent: ${result.bounds.join(', ')}. Pixel edges align to the source grid; all supported source bands and NoData are retained.`;
+    if (rustgisWindow) {
+      const opened = finishRustGISWindow(rustgisWindow);
+      message.append(el('small', opened
+        ? `RustGIS opened in a blank project. ${rustgisWindow.handoff.instructions} File: ${filename}`
+        : `The RustGIS window was blocked or closed. ${rustgisWindow.handoff.instructions} File: ${filename}`));
+      if (!opened) {
+        const link = addLink(message, 'Open blank RustGIS project ↗', rustgisWindow.handoff.href);
+        if (link) link.className = 'rustgis-local-link';
+      }
+    }
+    const provenance = el('button', 'Download crop provenance (.json)'); provenance.type = 'button'; provenance.onclick = () => download(name + '.json', result.provenance);
+    message.append(provenance);
+    const raster = {width: result.width, height: result.height, bands: result.bands, epsg: result.epsg, pixelIsArea: result.pixelIsArea,
+      northUp: result.northUp, geoKeys: result.geoKeys, modelTransformation: result.modelTransformation,
+      bounds: result.bounds, origin: result.origin, resolution: result.resolution};
+    const fieldwork = assessFieldworkRaster({...raster, byteCount: result.buffer.byteLength});
+    if (fieldwork.compatible) {
+      message.append(el('small', ' FieldWork-ready: explicit WGS84/PixelIsArea GeoKeys, no ModelTransformation, a consistent north-up CRS84 grid, one band, at most 262,144 cells and 5,000,000 bytes.'));
+      const sidecar = el('button', 'Download FieldWork raster handoff (.json)', 'fieldwork-raster-download'); sidecar.type = 'button';
+      sidecar.onclick = async () => {
+        sidecar.disabled = true;
+        try {
+          const handoff = await buildFieldworkRasterHandoff({buffer: result.buffer, raster, sourceLineage: result.provenance,
+            fieldworkProvenance: {
+              title: asset.title || item.properties?.title || String(item.id),
+              provider: (Array.isArray(item.properties?.providers) ? item.properties.providers : client.collections.find(c => c.id === item.collection)?.providers || []).map(value => value?.name).filter(Boolean).join(', '),
+              sourceURL: sanitizeExport(client.sourceFor(item)), downloadURL: publicSource, identifier: String(item.id),
+              citation: item.properties?.citation || '', license: item.properties?.license || client.collections.find(c => c.id === item.collection)?.license || '',
+              version: asset.version || item.properties?.version || '', temporalCoverage: item.properties?.datetime || item.properties?.start_datetime || '',
+              published: item.properties?.published || item.properties?.created || '', accessed: result.provenance.created_at?.slice(0, 10) || '',
+              units: asset['raster:bands']?.[0]?.unit || asset['eo:bands']?.[0]?.unit || '',
+              notes: 'Source-resolution crop prepared by JupyterLite STAC Browser. Descriptive metadata comes from STAC declarations and is not byte or format verification.',
+            },
+            clippingBoundary: {crs: 'CRS84', bbox: area.bbox}, acquisitionBoundary: {crs: `EPSG:${result.epsg}`, bounds: result.bounds}});
+          download(name + '-fieldwork.json', handoff);
+        } catch (error) { message.append(el('small', error.message, 'error')); }
+        finally { sidecar.disabled = false; }
+      };
+      message.append(sidecar);
+    } else message.append(el('small', ` Not claimed FieldWork-ready: ${fieldwork.reasons.join('; ')}.`));
+  } catch (error) {
+    closeRustGISWindow(rustgisWindow);
+    if (workflow.isConnected) message.textContent = frozenText + error.message;
+  } finally {
+    sessionJob?.finish();
+    if (cropJob === job) cropJob = null;
+    cancel.hidden = true;
+    if (chooser) chooser.disabled = false;
+    document.querySelectorAll('[data-crop-action]').forEach(button => { button.disabled = Boolean(cropJob); });
+    if (!cropJob && cropRefreshPending) { cropRefreshPending = false; refreshCropWorkflow(); }
+  }
+}
+
 function protectedControls(li, {href, asset, key}) {
   if (!copernicusSession.loaded) { li.append(el('small', 'Optional: load your CDSE OData access token in Copernicus connection to check or download this asset here.')); return; }
   const group = el('div', null, 'protected-controls'), message = el('p', '', 'protected-status');
@@ -403,9 +526,8 @@ function datasetDownloads(item) {
   section.setAttribute('aria-labelledby', 'download-heading');
   const heading = el('h3', 'Download dataset'); heading.id = 'download-heading';
   section.append(heading);
-  section.append(el('p', '', 'crop-bounds'), el('p', 'Full-file links retain the original asset. Clip study bbox saves a source-resolution GeoTIFF on the source pixel grid. Transfers include headers and complete intersecting blocks, which may extend beyond the bbox. Browser limits: 64 MiB output, 128 MiB transfer/decoded blocks, 16 MiB per block and two minutes per job.', 'download-help'));
-  queueMicrotask(updateCropBounds);
   const assets = el('ul', null, 'download-assets'), base = client.baseFor(item);
+  const clipCandidates = [];
   let fileLinks = 0, restrictedFileLinks = 0, otherRestrictedAssets = false, copernicusLinks = 0, copernicusDataLinks = 0;
   const collection = client.collections.find(c => c.id === item.collection);
   const entries = Object.entries(item.assets || {}).filter(([, asset]) => asset && typeof asset === 'object' && typeof asset.href === 'string');
@@ -501,9 +623,12 @@ function datasetDownloads(item) {
       } catch (error) { li.append(el('small', error.message, 'error')); }
     };
     li.append(fieldwork, el('small', 'Metadata handoff only. It makes no asset request; direct FieldWork STAC import is future work.'));
-    cropOption(li, {item, key, asset, href, supporting, auth, copernicus, authURL});
+    const clipCandidate = cropOption(li, {item, key, asset, href, supporting, auth, copernicus, authURL});
+    if (clipCandidate) clipCandidates.push(clipCandidate);
     assets.append(li);
   }
+  section.append(promotedCropWorkflow(clipCandidates));
+  queueMicrotask(updateCropBounds);
   section.append(el('p', copernicusDataLinks
     ? copernicusSession.loaded
       ? 'Your token is loaded. Check each supported asset, save its original file, or clip a supported TIFF with the study bbox. Loading does not verify access. Provider download links remain available if an action is unavailable or fails; NetCDF is original-only.'

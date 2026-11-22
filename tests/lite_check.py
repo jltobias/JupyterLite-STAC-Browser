@@ -91,6 +91,11 @@ def main():
                     asset_requests.append(route.request.url)
                     fulfill_raster(route)
                 context.route('https://download-fixture.test/**', attachment)
+                rustgis_requests = []
+                def rustgis_destination(route):
+                    rustgis_requests.append(route.request.url)
+                    route.fulfill(status=200, content_type='text/html', body='<h1>Synthetic RustGIS</h1>')
+                context.route('https://web.rustgis.app/**', rustgis_destination)
             page = context.new_page()
             page.set_default_timeout(120000)
             notebooks = [
@@ -106,6 +111,7 @@ def main():
                 searches.clear()
                 if args.fixtures:
                     asset_requests.clear()
+                    rustgis_requests.clear()
                 print(f"Opening {notebook}", flush=True)
                 document = json.loads((ROOT / '_site/lite/files' / notebook).read_text(encoding='utf-8'))
                 heading = ''.join(document['cells'][0]['source']).splitlines()[0].removeprefix('# ')
@@ -281,7 +287,19 @@ print('Spatial replay passed: bbox, polygon, none')
                         with page.expect_download() as crop_download:
                             frame.locator('.asset-clip').first.click()
                         verify_crop(ATTACHMENT, Path(crop_download.value.path()).read_bytes())
-                        expect(frame.locator('.crop-status').first).to_contain_text('Saved 29 × 41 pixels')
+                        expect(frame.locator('.crop-status').first).to_contain_text('Prepared 29 × 41 pixels')
+                        before_combined = len(asset_requests)
+                        with context.expect_page() as opened:
+                            with page.expect_download() as combined_download:
+                                frame.locator('.asset-clip-rustgis').click()
+                        rustgis = opened.value
+                        expect(rustgis).to_have_url('https://web.rustgis.app/?blank')
+                        expect(rustgis.get_by_role('heading', name='Synthetic RustGIS')).to_be_visible()
+                        verify_crop(ATTACHMENT, Path(combined_download.value.path()).read_bytes())
+                        expect(frame.locator('.crop-status')).to_contain_text('choose Add Data and select the downloaded GeoTIFF')
+                        assert len(asset_requests) > before_combined
+                        assert rustgis_requests == ['https://web.rustgis.app/?blank']
+                        rustgis.close()
                     assert len(search_requests) == count_before_resume
                     if args.fixtures:
                         protected = copy.deepcopy(items['features'][0])

@@ -14,6 +14,8 @@ Requests are bounded: 20-second network timeouts, 1–100 items per search page,
 
 Before a link is exposed, the builder rejects non-HTTP(S) locations, URL user information, recognized signed or credential query parameters, `auth:refs`, and protected Copernicus OData paths. The memory-only Copernicus token is never available to the builder. RustGIS performs the later fetch in its own origin, so provider CORS, Range, size, format and access rules remain authoritative.
 
+For a generated crop, `rustGISLocalFileHandoff()` returns only the constant blank-project URL and local-import instructions. `app.js` reuses the completed raster worker buffer for one download and opens an `about:blank` placeholder synchronously from the combined button so popup blockers are observable. Only after a successful, current crop does that window navigate to RustGIS; failures close it when the browser permits. A Blob URL cannot serve as RustGIS's cross-origin `data=` address, and the documented embed protocol has no arbitrary binary-import message. The implementation therefore requires an explicit RustGIS file-picker or drag-and-drop step and never invents a storage or messaging bridge.
+
 ## GeoLibre Web handoff
 
 `web/geolibre-handoff.js` builds the exact GeoLibre Web `data` destination and a user-activated, same-origin `geolibre-bridge.html` link. Its narrower allow-list follows the direct URL contract: GeoJSON, GeoParquet, PMTiles, COG candidates, LAS/LAZ/COPC, and EPT. GeoLibre's loader dispatches COG, GeoParquet, and PMTiles by filename suffix; the handoff therefore does not infer those formats from MIME alone. An extensionless GeoJSON endpoint needs an explicit GeoJSON media type, while an extensionless LiDAR endpoint receives `dataType=lidar` only when its media type identifies LiDAR. Rendering the builder performs no network request and does not use GeoLibre's `stac` parameter, because that parameter starts catalog or Collection discovery rather than preserving an Item asset selection.
@@ -50,6 +52,7 @@ Run `python scripts/update_catalog_directory.py` to refresh the bundled file fro
 | Book assets missing under a repository path | Rebuild with the correct `--base-url`; MyST asset paths are set at build time. |
 | Missing basemap | Tile service may be unavailable; metadata search can still succeed. |
 | Asset access denied | Consult provider documentation and data terms; this tool does not sign URLs. |
+| RustGIS opened without the clipped layer | In RustGIS choose **Add Data** and select the GeoTIFF named in the Explorer status, or drag the downloaded file onto the map. Cross-origin browser rules prevent automatic local-file selection. |
 | GeoLibre compatibility fallback | Download the selected asset, open GeoLibre, and drag the file onto its map or use **Add data**. **Try remote URL anyway** is available when origin-specific CORS may make the check conservative. |
 
 Untrusted metadata is rendered as text. Only HTTP(S) links are shown; API requests require HTTPS and omit credentials. Original metadata remains intact in memory; GeoJSON export copies resolve relative asset/source links using each item's original document base. Provenance records the last successful item/page retrieval time, independently of export time. Large or malformed provider geometry may be omitted from the map while its item card remains available.

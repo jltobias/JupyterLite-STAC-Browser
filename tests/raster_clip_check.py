@@ -167,7 +167,7 @@ def check_crop_downloads(page, catalog, original):
     verify_crop(ATTACHMENT, Path(downloaded.value.path()).read_bytes())
     expect(page.locator('.crop-status')).to_contain_text('requires one band (output has 3)')
     expect(page.locator('.fieldwork-raster-download')).to_have_count(0)
-    expect(page.locator('.crop-status')).to_contain_text('Saved 29 × 41 pixels in EPSG:4326')
+    expect(page.locator('.crop-status')).to_contain_text('Prepared 29 × 41 pixels in EPSG:4326')
     assert len(searches) == 1 and all(requests)
     assert sum(int(r.split('-')[1]) - int(r.split('=')[1].split('-')[0]) + 1 for r in requests) < len(ATTACHMENT)
     with page.expect_download() as provenance:
@@ -231,6 +231,107 @@ def check_crop_downloads(page, catalog, original):
                 pass  # Worker termination may have already closed the route.
         page.wait_for_timeout(100)
         assert len(downloads) == 2
+    # The combined action performs one new range-based crop, downloads those
+    # exact bytes, and opens only a blank RustGIS project for local import.
+    rustgis_requests = []
+    def rustgis_destination(route):
+        rustgis_requests.append(route.request.url)
+        route.fulfill(status=200, content_type='text/html', body='<h1>Synthetic RustGIS</h1>')
+    page.context.route('https://web.rustgis.app/**', rustgis_destination)
+    mode[0] = 'range'
+    page.locator('#bbox').fill(','.join(map(str, BBOX)))
+    page.locator('#bbox').press('Tab')
+    before_requests = len(requests)
+    with page.context.expect_page() as opened:
+        with page.expect_download() as combined_download:
+            page.locator('.asset-clip-rustgis').click()
+    rustgis = opened.value
+    expect(rustgis).to_have_url('https://web.rustgis.app/?blank')
+    expect(rustgis.get_by_role('heading', name='Synthetic RustGIS')).to_be_visible()
+    combined_bytes = Path(combined_download.value.path()).read_bytes()
+    verify_crop(ATTACHMENT, combined_bytes)
+    expect(page.locator('.crop-status')).to_contain_text('choose Add Data and select the downloaded GeoTIFF')
+    assert len(requests) > before_requests and all(requests[before_requests:])
+    assert rustgis_requests == ['https://web.rustgis.app/?blank']
+    rustgis.close()
+    # A blocked popup is reported immediately, and cancellation neither saves
+    # a file nor attempts a delayed RustGIS navigation.
+    page.evaluate('window.__stacRealOpen = window.open; window.open = () => null')
+    mode[0] = 'pending'
+    before_downloads, before_rustgis = len(downloads), len(rustgis_requests)
+    page.locator('.asset-clip-rustgis').click()
+    expect(page.locator('.crop-status')).to_contain_text('RustGIS popup was blocked')
+    expect(page.locator('.crop-cancel')).to_be_visible()
+    page.locator('.crop-cancel').click()
+    page.evaluate('window.open = window.__stacRealOpen; delete window.__stacRealOpen')
+    while pending:
+        try:
+            pending.pop().abort()
+        except Exception:
+            pass
+    page.wait_for_timeout(100)
+    assert len(downloads) == before_downloads and len(rustgis_requests) == before_rustgis
+    # Failed crops close an app-owned placeholder instead of opening RustGIS.
+    mode[0] = 'ignored'
+    with page.context.expect_page() as failed_opened:
+        page.locator('.asset-clip-rustgis').click()
+    failed_popup = failed_opened.value
+    expect(page.locator('.crop-status')).to_contain_text('Provider ignored HTTP Range')
+    page.wait_for_timeout(100)
+    assert failed_popup.is_closed()
+    assert len(downloads) == before_downloads and len(rustgis_requests) == before_rustgis
+    # If the user closes the placeholder while a valid crop is running, the
+    # crop still downloads and a normal fallback link replaces the handoff.
+    mode[0] = 'pending'
+    with page.expect_download() as closed_download:
+        with page.context.expect_page() as closed_opened:
+            page.locator('.asset-clip-rustgis').click()
+        closed_popup = closed_opened.value
+        page.wait_for_timeout(100)
+        assert pending
+        closed_popup.close()
+        mode[0] = 'range'
+        while pending:
+            fulfill_raster(pending.pop(0), requests)
+    verify_crop(ATTACHMENT, Path(closed_download.value.path()).read_bytes())
+    expect(page.locator('.crop-status')).to_contain_text('window was blocked or closed')
+    expect(page.locator('.rustgis-local-link')).to_be_visible()
+    assert len(rustgis_requests) == before_rustgis
+    # Reusing the placeholder for another page removes the ownership marker;
+    # the completed crop must not replace that page with RustGIS.
+    mode[0] = 'pending'
+    with page.expect_download() as reused_download:
+        with page.context.expect_page() as reused_opened:
+            page.locator('.asset-clip-rustgis').click()
+        reused_popup = reused_opened.value
+        page.wait_for_timeout(100)
+        assert pending
+        reused_popup.goto('data:text/html,<p>User%20content</p>')
+        mode[0] = 'range'
+        while pending:
+            fulfill_raster(pending.pop(0), requests)
+    verify_crop(ATTACHMENT, Path(reused_download.value.path()).read_bytes())
+    assert reused_popup.url.startswith('data:text/html') and not reused_popup.is_closed()
+    expect(page.locator('.crop-status')).to_contain_text('window was blocked or closed')
+    assert len(rustgis_requests) == before_rustgis
+    reused_popup.close()
+    # Page teardown closes the still-owned placeholder synchronously.
+    mode[0] = 'pending'
+    with page.context.expect_page() as unload_opened:
+        page.locator('.asset-clip-rustgis').click()
+    unload_popup = unload_opened.value
+    page.wait_for_timeout(100)
+    assert pending
+    page.evaluate("dispatchEvent(new PageTransitionEvent('pagehide'))")
+    page.wait_for_timeout(100)
+    assert unload_popup.is_closed()
+    while pending:
+        try:
+            pending.pop().abort()
+        except Exception:
+            pass
+    mode[0] = 'range'
+    page.context.unroute('https://web.rustgis.app/**', rustgis_destination)
     # Polygon envelopes and drawing validation are independent of search mode.
     mode[0] = 'range'
     page.locator('#bbox').fill(','.join(map(str, BBOX)))
@@ -283,7 +384,7 @@ def check_crop_downloads(page, catalog, original):
         expect(page.locator('#search')).to_be_enabled()
         page.locator('.result-card').click()
         expect(page.locator('.asset-clip, .provider-subset')).to_have_count(0)
-        expect(page.locator('.clip-unavailable')).to_contain_text('not source raster data')
+        expect(page.locator('.clip-unavailable').filter(has_text='not source raster data')).to_have_count(1)
         expect(page.locator('.asset-download')).to_have_count(1)
     page.context.unroute(host + '/**', route_fixture)
     page.remove_listener('download', record_download)
